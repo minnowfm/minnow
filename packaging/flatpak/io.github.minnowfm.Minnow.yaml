@@ -27,3 +27,7 @@ modules:
       - type: git
         url: https://github.com/minnowfm/minnow
         tag: v0.1.1
+        x-checker-data:
+          type: git
+          tag-pattern: ^v([0-9.]+)$
+          version-scheme: semantic
