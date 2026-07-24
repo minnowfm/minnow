@@ -12,6 +12,7 @@ class QListView;
 class QTreeView;
 class QLabel;
 class QAbstractItemView;
+class QVBoxLayout;
 class KDirLister;
 class KDirModel;
 class KDirSortFilterProxyModel;
@@ -63,6 +64,7 @@ private:
     QStackedWidget *m_viewStack = nullptr;
     QListView *m_gridView = nullptr;
     QTreeView *m_listView = nullptr;
+    QVBoxLayout *m_cardLayout = nullptr;
 
     KDirLister *m_dirLister = nullptr;
     KDirModel *m_dirModel = nullptr;

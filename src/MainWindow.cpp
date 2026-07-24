@@ -18,14 +18,16 @@
 #include <QListView>
 #include <QMenu>
 #include <QMimeData>
+#include <QPropertyAnimation>
+#include <QScrollBar>
 #include <QSettings>
 #include <QStackedWidget>
-#include <QStatusBar>
 #include <QStorageInfo>
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <KDirLister>
 #include <KDirModel>
@@ -46,6 +48,50 @@ QUrl parentOf(const QUrl &url)
     u.setPath(path);
     return u;
 }
+
+// Animates wheel-triggered scrolling instead of jumping straight to the target position,
+// so it reads closer to a browser's smooth scroll than the default per-item/per-line jump.
+class SmoothScroller : public QObject
+{
+public:
+    explicit SmoothScroller(QAbstractItemView *view)
+        : QObject(view)
+        , m_view(view)
+        , m_animation(new QPropertyAnimation(view->verticalScrollBar(), "value", this))
+    {
+        m_animation->setEasingCurve(QEasingCurve::OutCubic);
+        view->viewport()->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Wheel) {
+            auto *wheelEvent = static_cast<QWheelEvent *>(event);
+            const int notches = wheelEvent->angleDelta().y() / 120;
+            if (notches == 0)
+                return QObject::eventFilter(watched, event);
+
+            QScrollBar *bar = m_view->verticalScrollBar();
+            const int base = m_animation->state() == QAbstractAnimation::Running ? m_animation->endValue().toInt()
+                                                                                  : bar->value();
+            const int target = qBound(bar->minimum(), base - notches * kPixelsPerNotch, bar->maximum());
+
+            m_animation->stop();
+            m_animation->setStartValue(bar->value());
+            m_animation->setEndValue(target);
+            m_animation->setDuration(220);
+            m_animation->start();
+            return true;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    static constexpr int kPixelsPerNotch = 90;
+    QAbstractItemView *m_view;
+    QPropertyAnimation *m_animation;
+};
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -57,7 +103,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupToolBar();
     setupSidebar();
     setupViews();
-    setupStatusBar();
     applyStyle();
 
     QSettings settings;
@@ -71,10 +116,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *contentCard = new QFrame(this);
     contentCard->setObjectName(QStringLiteral("contentCard"));
-    auto *cardLayout = new QVBoxLayout(contentCard);
-    cardLayout->setContentsMargins(6, 6, 6, 6);
-    cardLayout->addWidget(m_viewStack);
+    m_cardLayout = new QVBoxLayout(contentCard);
+    m_cardLayout->setContentsMargins(6, 6, 6, 6);
+    m_cardLayout->setSpacing(4);
+    m_cardLayout->addWidget(m_viewStack, 1);
     layout->addWidget(contentCard, 1);
+
+    setupStatusBar();
 
     setCentralWidget(central);
 
@@ -250,6 +298,9 @@ void MainWindow::setupViews()
     m_gridView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     m_gridView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_gridView->setFrameShape(QFrame::NoFrame);
+    m_gridView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_gridView->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    new SmoothScroller(m_gridView);
 
     m_listView = new QTreeView(this);
     m_listView->setModel(m_proxyModel);
@@ -261,6 +312,9 @@ void MainWindow::setupViews()
     m_listView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_listView->setFrameShape(QFrame::NoFrame);
+    m_listView->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_listView->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    new SmoothScroller(m_listView);
 
     m_viewStack = new QStackedWidget(this);
     m_viewStack->addWidget(m_gridView);
@@ -277,10 +331,21 @@ void MainWindow::setupViews()
 
 void MainWindow::setupStatusBar()
 {
-    m_itemCountLabel = new QLabel(this);
-    m_freeSpaceLabel = new QLabel(this);
-    statusBar()->addWidget(m_itemCountLabel);
-    statusBar()->addPermanentWidget(m_freeSpaceLabel);
+    auto *statusRow = new QWidget;
+    auto *statusLayout = new QHBoxLayout(statusRow);
+    statusLayout->setContentsMargins(6, 0, 6, 0);
+
+    m_itemCountLabel = new QLabel(statusRow);
+    m_freeSpaceLabel = new QLabel(statusRow);
+    const QString labelStyle = QStringLiteral("color: palette(mid); font-size: 11px;");
+    m_itemCountLabel->setStyleSheet(labelStyle);
+    m_freeSpaceLabel->setStyleSheet(labelStyle);
+
+    statusLayout->addWidget(m_itemCountLabel);
+    statusLayout->addStretch(1);
+    statusLayout->addWidget(m_freeSpaceLabel);
+
+    m_cardLayout->addWidget(statusRow);
 }
 
 void MainWindow::applyStyle()
