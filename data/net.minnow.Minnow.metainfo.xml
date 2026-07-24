@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  License and homepage are not set: this project has no chosen license
+  or public repository yet. Fill in <project_license> and <url type="homepage">
+  before publishing this metainfo file anywhere (e.g. a software center).
+-->
+<component type="desktop-application">
+  <id>net.minnow.Minnow</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <name>Minnow</name>
+  <summary>A simple, lightweight file manager for KDE</summary>
+  <description>
+    <p>
+      Minnow is a small, KIO-based file browser built as a lighter alternative
+      to Dolphin: grid and list views, a customizable places sidebar, and
+      standard file operations, without the extra panels and configuration
+      surface of a full-featured file manager.
+    </p>
+  </description>
+  <launchable type="desktop-id">minnow.desktop</launchable>
+  <provides>
+    <binary>minnow</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

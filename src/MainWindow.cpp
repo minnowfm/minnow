@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "FileOperations.h"
+#include "PathUtils.h"
 #include "PlacesSidebar.h"
 
 #include <QAction>
@@ -35,22 +36,11 @@
 #include <KDirModel>
 #include <KDirSortFilterProxyModel>
 #include <KFileItem>
+#include <KIO/FileUndoManager>
 #include <KIO/OpenUrlJob>
 
 namespace
 {
-QUrl parentOf(const QUrl &url)
-{
-    QUrl u = url;
-    QString path = u.path();
-    if (path.size() > 1 && path.endsWith(QLatin1Char('/')))
-        path.chop(1);
-    const int idx = path.lastIndexOf(QLatin1Char('/'));
-    path = (idx <= 0) ? QStringLiteral("/") : path.left(idx);
-    u.setPath(path);
-    return u;
-}
-
 // Animates wheel-triggered scrolling instead of jumping straight to the target position,
 // so it reads closer to a browser's smooth scroll than the default per-item/per-line jump.
 class SmoothScroller : public QObject
@@ -96,8 +86,9 @@ private:
 };
 }
 
-MainWindow::MainWindow(QWidget *parent)
+MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     : QMainWindow(parent)
+    , m_startUrl(startUrl)
 {
     resize(960, 620);
 
@@ -129,7 +120,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCentralWidget(central);
 
-    navigateTo(QUrl::fromLocalFile(QDir::homePath()));
+    KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
+    auto *undoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Z), this);
+    undoShortcut->setContext(Qt::ApplicationShortcut);
+    connect(undoShortcut, &QShortcut::activated, this, [] {
+        KIO::FileUndoManager::self()->undo();
+    });
+    auto *redoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z), this);
+    redoShortcut->setContext(Qt::ApplicationShortcut);
+    connect(redoShortcut, &QShortcut::activated, this, [] {
+        KIO::FileUndoManager::self()->redo();
+    });
+
+    navigateTo(m_startUrl.isValid() ? m_startUrl : QUrl::fromLocalFile(QDir::homePath()));
 }
 
 void MainWindow::setupToolBar()
@@ -238,9 +241,25 @@ void MainWindow::setupViews()
     for (QAbstractItemView *view : {static_cast<QAbstractItemView *>(m_gridView), static_cast<QAbstractItemView *>(m_listView)}) {
         for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
             auto *shortcut = new QShortcut(QKeySequence(key), view);
-            shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+            shortcut->setContext(Qt::WindowShortcut);
             connect(shortcut, &QShortcut::activated, this, [this, view] { onItemActivated(view->currentIndex()); });
         }
+
+        auto *trashShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), view);
+        trashShortcut->setContext(Qt::WindowShortcut);
+        connect(trashShortcut, &QShortcut::activated, this, [this] {
+            const QList<QUrl> urls = selectedUrls();
+            if (!urls.isEmpty())
+                FileOperations::trash(urls, this);
+        });
+
+        auto *deleteShortcut = new QShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete), view);
+        deleteShortcut->setContext(Qt::WindowShortcut);
+        connect(deleteShortcut, &QShortcut::activated, this, [this] {
+            const QList<QUrl> urls = selectedUrls();
+            if (!urls.isEmpty())
+                FileOperations::remove(urls, this);
+        });
     }
     connect(m_dirLister, &KCoreDirLister::completed, this, &MainWindow::updateStatusBar);
     connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &MainWindow::onSortIndicatorChanged);
@@ -467,6 +486,7 @@ void MainWindow::onFilterTextChanged(const QString &text)
 {
     m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
     m_proxyModel->setFilterFixedString(text);
+    updateStatusBar();
 }
 
 void MainWindow::setIconSize(int size)
@@ -612,10 +632,18 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
 
         menu.addSeparator();
 
-        QAction *renameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")), tr("Rename"));
-        connect(renameAction, &QAction::triggered, this, [view] {
-            view->edit(view->currentIndex());
-        });
+        if (selected.size() == 1) {
+            QAction *renameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")), tr("Rename"));
+            const QUrl renameUrl = selected.first();
+            connect(renameAction, &QAction::triggered, this, [this, renameUrl] {
+                const QString oldName = renameUrl.fileName();
+                bool ok = false;
+                const QString newName =
+                    QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, oldName, &ok);
+                if (ok && !newName.isEmpty() && newName != oldName)
+                    FileOperations::rename(renameUrl, newName, this);
+            });
+        }
 
         QAction *trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
         connect(trashAction, &QAction::triggered, this, [this, selected] {

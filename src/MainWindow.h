@@ -23,7 +23,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(const QUrl &startUrl = QUrl(), QWidget *parent = nullptr);
 
 private Q_SLOTS:
     void navigateTo(const QUrl &url, bool addToHistory = true);
@@ -74,6 +74,7 @@ private:
     QVector<QUrl> m_history;
     int m_historyIndex = -1;
     QUrl m_currentUrl;
+    QUrl m_startUrl;
 
     struct FolderSort {
         int column = 0;

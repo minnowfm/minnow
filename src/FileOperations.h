@@ -7,6 +7,11 @@
 // Thin wrappers around KIO jobs so MainWindow doesn't deal with job wiring directly.
 namespace FileOperations
 {
+// Pure path computation, split out from the job-starting functions below so it's
+// unit-testable without touching the filesystem or needing a running KIO session.
+QUrl renameDestination(const QUrl &url, const QString &newName);
+QUrl mkdirDestination(const QUrl &parentDir, const QString &name);
+
 void copyTo(const QList<QUrl> &sources, const QUrl &destDir, QWidget *parent);
 void moveTo(const QList<QUrl> &sources, const QUrl &destDir, QWidget *parent);
 void trash(const QList<QUrl> &urls, QWidget *parent);
