@@ -1,5 +1,5 @@
 Name:           minnow
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        A simple, lightweight file manager for KDE
 
@@ -39,5 +39,8 @@ surface of a full-featured file manager.
 %{_datadir}/metainfo/io.github.minnowfm.Minnow.metainfo.xml
 
 %changelog
+* Fri Jul 24 2026 Minnow Contributors <noreply@example.com> - 0.1.1-1
+- Rename app ID to io.github.minnowfm.Minnow.
+
 * Fri Jul 24 2026 Minnow Contributors <noreply@example.com> - 0.1.0-1
 - Initial release.

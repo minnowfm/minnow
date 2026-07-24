@@ -1,3 +1,9 @@
+minnow (0.1.1-1) unstable; urgency=medium
+
+  * Rename app ID to io.github.minnowfm.Minnow.
+
+ -- Minnow Contributors <noreply@example.com>  Fri, 24 Jul 2026 00:00:00 +0000
+
 minnow (0.1.0-1) unstable; urgency=medium
 
   * Initial release.

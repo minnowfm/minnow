@@ -51,7 +51,8 @@ This installs the `minnow` binary, a `.desktop` file, an icon, and an AppStream 
 ## Packaging
 
 Packaging manifests/scripts live under `packaging/`, one subdirectory per format. All of them
-currently point at the `v0.1.0` tag as a placeholder — replace it once a real release tag exists.
+currently point at the `v0.1.1` release tag; bump this alongside `CMakeLists.txt`'s version
+when cutting a new one.
 
 ### Automated builds
 
@@ -64,8 +65,8 @@ manually against an existing tag from the Actions tab (`workflow_dispatch`).
   (from `snapcraft export-login`); otherwise that step is skipped and only the built `.snap`
   is attached to the release.
 - Flathub publishing isn't automated here — see below.
-- This workflow hasn't been exercised against a real tag yet, since no tag exists — treat the
-  first real release as the actual test of the pipeline.
+- Verified end-to-end against a real tag (`v0.1.0`): all five build jobs plus the release
+  step that attaches everything to the GitHub Release.
 
 ### AUR
 
@@ -76,10 +77,11 @@ Two packages, under `packaging/aur/`:
   that the release workflow attaches to each GitHub Release (built in an `archlinux:latest`
   container, so it's ABI-compatible with a current Arch install).
 
-Both have a placeholder `sha256sums=('SKIP')` — run `updpkgsums` in each directory once a real
-tag exists, then push each directory's contents to its own AUR git repo
-(`ssh://aur@aur.archlinux.org/minnow.git` and `.../minnow-bin.git`) - the AUR itself is not
-this repository.
+Both are published at [aur.archlinux.org/packages/minnow](https://aur.archlinux.org/packages/minnow)
+and [.../minnow-bin](https://aur.archlinux.org/packages/minnow-bin) - the AUR itself is not this
+repository. After bumping `pkgver`/tagging a new release, run `updpkgsums` in each directory,
+regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), and push each directory's contents
+to its own AUR git repo (`ssh://aur@aur.archlinux.org/minnow.git` and `.../minnow-bin.git`).
 
 ### Flatpak
 

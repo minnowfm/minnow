@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("minnow"));
     app.setApplicationDisplayName(QStringLiteral("Minnow"));
     app.setOrganizationName(QStringLiteral("minnow"));
-    app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setApplicationVersion(QStringLiteral("0.1.1"));
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/minnow.svg")));
 
     QCommandLineParser parser;

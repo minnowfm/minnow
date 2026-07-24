@@ -1,5 +1,5 @@
 name: minnow
-version: '0.1.0'
+version: '0.1.1'
 summary: A simple, lightweight file manager for KDE
 description: |
   Minnow is a small, KIO-based file browser built as a lighter alternative to Dolphin:
@@ -32,7 +32,7 @@ parts:
     source: https://github.com/minnowfm/minnow.git
     # PLACEHOLDER: no tags exist yet. Replace with a real release tag once this repository
     # has been pushed to and tagged.
-    source-tag: 'v0.1.0'
+    source-tag: 'v0.1.1'
     cmake-parameters:
       - -DCMAKE_INSTALL_PREFIX=/usr
       - -DCMAKE_BUILD_TYPE=Release
