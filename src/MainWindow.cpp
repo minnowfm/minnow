@@ -305,15 +305,16 @@ void MainWindow::applyStyle()
                         "QTreeView { border: none; background: transparent; }"
                         "QTreeView::item { border-radius: 10px; }"
                         "QTreeView::item:selected, QTreeView::item:hover { border-radius: 10px; }"
-                        "QScrollBar:vertical { background: transparent; width: 10px; margin: 0px; }"
-                        "QScrollBar::handle:vertical { background: palette(mid); border-radius: 5px; min-height: 24px; }"
-                        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: none; border: none; }"
-                        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }"
-                        "QScrollBar:horizontal { background: transparent; height: 10px; margin: 0px; }"
-                        "QScrollBar::handle:horizontal { background: palette(mid); border-radius: 5px; min-width: 24px; }"
-                        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: none; border: none; }"
-                        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }")
-            .arg(cardColor.name(), borderColor.name()));
+                        "QScrollBar:vertical { background: %1; border: none; width: 10px; margin: 0px; }"
+                        "QScrollBar::handle:vertical { background: %3; border-radius: 5px; min-height: 24px; }"
+                        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: %1; border: none; }"
+                        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: %1; border: none; }"
+                        "QScrollBar:horizontal { background: %1; border: none; height: 10px; margin: 0px; }"
+                        "QScrollBar::handle:horizontal { background: %3; border-radius: 5px; min-width: 24px; }"
+                        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: %1; border: none; }"
+                        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: %1; border: none; }"
+                        "QScrollBar::corner { background: %1; border: none; }")
+            .arg(cardColor.name(), borderColor.name(), (dark ? windowColor.lighter(200) : windowColor.darker(160)).name()));
 }
 
 QAbstractItemView *MainWindow::currentView() const
