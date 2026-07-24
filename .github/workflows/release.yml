@@ -155,7 +155,11 @@ jobs:
         run: |
           mkdir -p release-files
           cp minnow-*-src.tar.gz release-files/
-          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.flatpak' -o -name '*.tar.gz' \) -exec cp {} release-files/ \;
+          # Excludes rpmbuild's auto-generated debuginfo/debugsource/src.rpm sub-packages
+          # and debhelper's auto-generated dbgsym .deb - just the installable packages.
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.flatpak' -o -name '*.tar.gz' \) \
+            ! -name '*dbgsym*' ! -name '*debuginfo*' ! -name '*debugsource*' ! -name '*.src.rpm' \
+            -exec cp {} release-files/ \;
           ls -la release-files/
       - uses: softprops/action-gh-release@v2
         with:
