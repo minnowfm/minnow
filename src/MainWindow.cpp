@@ -102,13 +102,14 @@ MainWindow::MainWindow(QWidget *parent)
     resize(960, 620);
 
     loadFolderSort();
+    loadFolderViewModes();
     setupToolBar();
     setupSidebar();
     setupViews();
     applyStyle();
 
     QSettings settings;
-    setIconSize(settings.value(QStringLiteral("View/IconSize"), 48).toInt());
+    setIconSize(settings.value(QStringLiteral("View/IconSize"), 64).toInt());
 
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
@@ -165,20 +166,6 @@ void MainWindow::setupToolBar()
     m_filterEdit->setMaximumWidth(200);
     toolbar->addWidget(m_filterEdit);
 
-    m_gridViewButton = new QToolButton(this);
-    m_gridViewButton->setIcon(QIcon::fromTheme(QStringLiteral("view-list-icons")));
-    m_gridViewButton->setToolTip(tr("Grid view"));
-    m_gridViewButton->setCheckable(true);
-    m_gridViewButton->setChecked(true);
-
-    m_listViewButton = new QToolButton(this);
-    m_listViewButton->setIcon(QIcon::fromTheme(QStringLiteral("view-list-details")));
-    m_listViewButton->setToolTip(tr("List view"));
-    m_listViewButton->setCheckable(true);
-
-    toolbar->addWidget(m_gridViewButton);
-    toolbar->addWidget(m_listViewButton);
-
     m_iconSizeButton = new QToolButton(this);
     m_iconSizeButton->setIcon(QIcon::fromTheme(QStringLiteral("zoom-fit-best")));
     m_iconSizeButton->setToolTip(tr("Icon size"));
@@ -211,61 +198,11 @@ void MainWindow::setupToolBar()
     m_iconSizeButton->setMenu(sizeMenu);
     toolbar->addWidget(m_iconSizeButton);
 
-    m_sortByButton = new QToolButton(this);
-    m_sortByButton->setIcon(QIcon::fromTheme(QStringLiteral("view-sort-ascending")));
-    m_sortByButton->setToolTip(tr("Sort by"));
-    m_sortByButton->setPopupMode(QToolButton::InstantPopup);
-
-    auto *sortMenu = new QMenu(m_sortByButton);
-    auto *columnGroup = new QActionGroup(sortMenu);
-    columnGroup->setExclusive(true);
-    static const QList<QPair<QString, int>> sortColumns = {
-        {tr("Name"), 0}, {tr("Size"), 1}, {tr("Date modified"), 2},
-        {tr("Permissions"), 3}, {tr("Owner"), 4}, {tr("Group"), 5}, {tr("Type"), 6},
-    };
-    for (const auto &entry : sortColumns) {
-        QAction *act = sortMenu->addAction(entry.first);
-        act->setCheckable(true);
-        act->setData(entry.second);
-        columnGroup->addAction(act);
-        const int column = entry.second;
-        connect(act, &QAction::triggered, this, [this, column] {
-            m_listView->header()->setSortIndicator(column, m_listView->header()->sortIndicatorOrder());
-        });
-    }
-    sortMenu->addSeparator();
-    QAction *ascAction = sortMenu->addAction(tr("Ascending"));
-    ascAction->setCheckable(true);
-    QAction *descAction = sortMenu->addAction(tr("Descending"));
-    descAction->setCheckable(true);
-    auto *orderGroup = new QActionGroup(sortMenu);
-    orderGroup->setExclusive(true);
-    orderGroup->addAction(ascAction);
-    orderGroup->addAction(descAction);
-    connect(ascAction, &QAction::triggered, this, [this] {
-        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::AscendingOrder);
-    });
-    connect(descAction, &QAction::triggered, this, [this] {
-        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::DescendingOrder);
-    });
-    connect(sortMenu, &QMenu::aboutToShow, this, [this, columnGroup, ascAction, descAction] {
-        const int col = m_listView->header()->sortIndicatorSection();
-        const Qt::SortOrder order = m_listView->header()->sortIndicatorOrder();
-        for (QAction *a : columnGroup->actions())
-            a->setChecked(a->data().toInt() == col);
-        ascAction->setChecked(order == Qt::AscendingOrder);
-        descAction->setChecked(order == Qt::DescendingOrder);
-    });
-    m_sortByButton->setMenu(sortMenu);
-    toolbar->addWidget(m_sortByButton);
-
     connect(m_backButton, &QToolButton::clicked, this, &MainWindow::goBack);
     connect(m_forwardButton, &QToolButton::clicked, this, &MainWindow::goForward);
     connect(m_upButton, &QToolButton::clicked, this, &MainWindow::goUp);
     connect(m_addressBar, &QLineEdit::returnPressed, this, &MainWindow::onAddressBarSubmitted);
     connect(m_filterEdit, &QLineEdit::textChanged, this, &MainWindow::onFilterTextChanged);
-    connect(m_gridViewButton, &QToolButton::clicked, this, &MainWindow::switchToGridView);
-    connect(m_listViewButton, &QToolButton::clicked, this, &MainWindow::switchToListView);
 }
 
 void MainWindow::setupSidebar()
@@ -374,7 +311,7 @@ void MainWindow::applyStyle()
                         "QToolBar { background: palette(window); border: none; spacing: 4px; padding: 4px; }"
                         "PlacesSidebar { background: palette(window); border: none; }"
                         "QFrame#contentCard { background: %1; border: 1px solid %2; border-radius: 14px; }"
-                        "QLineEdit { border-radius: 10px; padding: 4px 10px; }"
+                        "QLineEdit { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
                         "QToolButton { border-radius: 8px; padding: 4px; }"
                         "QListWidget::item { border-radius: 10px; padding: 5px 8px; margin: 1px 4px; }"
                         "QListWidget::item:selected { border-radius: 10px; }"
@@ -432,6 +369,7 @@ void MainWindow::navigateTo(const QUrl &url, bool addToHistory)
     m_addressBar->setText(url.toDisplayString(QUrl::PreferLocalFile));
     m_sidebar->setCurrentUrl(url);
     applySortForCurrentFolder();
+    applyViewModeForCurrentFolder();
     const QString name = url.fileName();
     setWindowTitle(QStringLiteral("Minnow — %1").arg(name.isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : name));
 
@@ -496,15 +434,55 @@ void MainWindow::onItemActivated(const QModelIndex &proxyIndex)
 void MainWindow::switchToGridView()
 {
     m_viewStack->setCurrentWidget(m_gridView);
-    m_gridViewButton->setChecked(true);
-    m_listViewButton->setChecked(false);
+    setFolderIsGrid(true);
 }
 
 void MainWindow::switchToListView()
 {
     m_viewStack->setCurrentWidget(m_listView);
-    m_listViewButton->setChecked(true);
-    m_gridViewButton->setChecked(false);
+    setFolderIsGrid(false);
+}
+
+void MainWindow::setFolderIsGrid(bool isGrid)
+{
+    if (!m_currentUrl.isValid())
+        return;
+    m_folderIsGrid[m_currentUrl.toString()] = isGrid;
+    saveFolderViewModes();
+}
+
+void MainWindow::applyViewModeForCurrentFolder()
+{
+    const bool isGrid = m_folderIsGrid.value(m_currentUrl.toString(), true);
+    m_viewStack->setCurrentWidget(isGrid ? static_cast<QWidget *>(m_gridView) : static_cast<QWidget *>(m_listView));
+}
+
+void MainWindow::loadFolderViewModes()
+{
+    QSettings settings;
+    const int size = settings.beginReadArray(QStringLiteral("FolderViewMode"));
+    for (int i = 0; i < size; ++i) {
+        settings.setArrayIndex(i);
+        const QString url = settings.value(QStringLiteral("url")).toString();
+        const bool isGrid = settings.value(QStringLiteral("isGrid"), true).toBool();
+        if (!url.isEmpty())
+            m_folderIsGrid[url] = isGrid;
+    }
+    settings.endArray();
+}
+
+void MainWindow::saveFolderViewModes()
+{
+    QSettings settings;
+    settings.remove(QStringLiteral("FolderViewMode"));
+    settings.beginWriteArray(QStringLiteral("FolderViewMode"));
+    int idx = 0;
+    for (auto it = m_folderIsGrid.constBegin(); it != m_folderIsGrid.constEnd(); ++it) {
+        settings.setArrayIndex(idx++);
+        settings.setValue(QStringLiteral("url"), it.key());
+        settings.setValue(QStringLiteral("isGrid"), it.value());
+    }
+    settings.endArray();
 }
 
 void MainWindow::onFilterTextChanged(const QString &text)
@@ -678,6 +656,59 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
 
         menu.addSeparator();
     }
+
+    QMenu *viewMenu = menu.addMenu(tr("View"));
+    QAction *iconsAction = viewMenu->addAction(tr("Icons"));
+    iconsAction->setCheckable(true);
+    iconsAction->setChecked(m_viewStack->currentWidget() == m_gridView);
+    QAction *listAction = viewMenu->addAction(tr("List"));
+    listAction->setCheckable(true);
+    listAction->setChecked(m_viewStack->currentWidget() == m_listView);
+    auto *viewGroup = new QActionGroup(viewMenu);
+    viewGroup->setExclusive(true);
+    viewGroup->addAction(iconsAction);
+    viewGroup->addAction(listAction);
+    connect(iconsAction, &QAction::triggered, this, &MainWindow::switchToGridView);
+    connect(listAction, &QAction::triggered, this, &MainWindow::switchToListView);
+
+    QMenu *sortMenu = menu.addMenu(tr("Sort by"));
+    static const QList<QPair<QString, int>> sortColumns = {
+        {tr("Name"), 0}, {tr("Size"), 1}, {tr("Date modified"), 2},
+        {tr("Permissions"), 3}, {tr("Owner"), 4}, {tr("Group"), 5}, {tr("Type"), 6},
+    };
+    auto *columnGroup = new QActionGroup(sortMenu);
+    columnGroup->setExclusive(true);
+    const int currentCol = m_listView->header()->sortIndicatorSection();
+    const Qt::SortOrder currentOrder = m_listView->header()->sortIndicatorOrder();
+    for (const auto &entry : sortColumns) {
+        QAction *act = sortMenu->addAction(entry.first);
+        act->setCheckable(true);
+        act->setChecked(entry.second == currentCol);
+        columnGroup->addAction(act);
+        const int column = entry.second;
+        connect(act, &QAction::triggered, this, [this, column] {
+            m_listView->header()->setSortIndicator(column, m_listView->header()->sortIndicatorOrder());
+        });
+    }
+    sortMenu->addSeparator();
+    QAction *ascAction = sortMenu->addAction(tr("Ascending"));
+    ascAction->setCheckable(true);
+    ascAction->setChecked(currentOrder == Qt::AscendingOrder);
+    QAction *descAction = sortMenu->addAction(tr("Descending"));
+    descAction->setCheckable(true);
+    descAction->setChecked(currentOrder == Qt::DescendingOrder);
+    auto *orderGroup = new QActionGroup(sortMenu);
+    orderGroup->setExclusive(true);
+    orderGroup->addAction(ascAction);
+    orderGroup->addAction(descAction);
+    connect(ascAction, &QAction::triggered, this, [this] {
+        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::AscendingOrder);
+    });
+    connect(descAction, &QAction::triggered, this, [this] {
+        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::DescendingOrder);
+    });
+
+    menu.addSeparator();
 
     QAction *newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
     connect(newFolderAction, &QAction::triggered, this, [this] {

@@ -49,16 +49,15 @@ private:
     QList<QUrl> selectedUrls() const;
     QAbstractItemView *currentView() const;
     void applySortForCurrentFolder();
+    void applyViewModeForCurrentFolder();
+    void setFolderIsGrid(bool isGrid);
 
     QToolButton *m_backButton = nullptr;
     QToolButton *m_forwardButton = nullptr;
     QToolButton *m_upButton = nullptr;
     QLineEdit *m_addressBar = nullptr;
     QLineEdit *m_filterEdit = nullptr;
-    QToolButton *m_gridViewButton = nullptr;
-    QToolButton *m_listViewButton = nullptr;
     QToolButton *m_iconSizeButton = nullptr;
-    QToolButton *m_sortByButton = nullptr;
 
     PlacesSidebar *m_sidebar = nullptr;
     QStackedWidget *m_viewStack = nullptr;
@@ -84,6 +83,10 @@ private:
     QHash<QString, FolderSort> m_folderSort;
     bool m_restoringSort = false;
 
+    QHash<QString, bool> m_folderIsGrid;
+
     void loadFolderSort();
     void saveFolderSort(const QString &folderKey, int column, Qt::SortOrder order);
+    void loadFolderViewModes();
+    void saveFolderViewModes();
 };
