@@ -1,0 +1,127 @@
+name: Release packages
+
+# Builds .deb, .rpm, a Snap, a Flatpak bundle, an Arch binary tarball (for AUR minnow-bin),
+# and a source tarball (for AUR minnow), then attaches all of them to a GitHub Release.
+#
+# Triggers on pushing a tag like v0.1.0. Can also be run manually (workflow_dispatch) against
+# any existing tag to rebuild/re-attach artifacts without cutting a new release.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build-arch-binary:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules \
+            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio git
+      - uses: actions/checkout@v4
+      - name: Build and install to a staging root
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF
+          cmake --build build -j"$(nproc)"
+          DESTDIR="$PWD/pkgroot" cmake --install build
+      - name: Create binary tarball
+        run: |
+          cd pkgroot
+          tar -czf "../minnow-${GITHUB_REF_NAME}-x86_64.tar.gz" usr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-binary-tarball
+          path: minnow-*-x86_64.tar.gz
+
+  build-deb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake extra-cmake-modules qt6-base-dev \
+            libkf6coreaddons-dev libkf6configwidgets-dev libkf6widgetsaddons-dev libkf6kio-dev \
+            debhelper devscripts fakeroot
+      - name: Build .deb
+        run: packaging/deb/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/*.deb
+
+  build-rpm:
+    runs-on: ubuntu-24.04
+    container: fedora:40
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y rpm-build cmake gcc-c++ extra-cmake-modules git tar \
+            qt6-qtbase-devel kf6-kcoreaddons-devel kf6-kconfigwidgets-devel \
+            kf6-kwidgetsaddons-devel kf6-kio-devel
+      - uses: actions/checkout@v4
+      - name: Build .rpm
+        run: packaging/rpm/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/*.rpm
+
+  build-snap:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: packaging/snap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap-package
+          path: ${{ steps.build.outputs.snap }}
+      # Requires a SNAPCRAFT_STORE_CREDENTIALS secret (from `snapcraft export-login`) - skipped
+      # entirely until that secret is added in repo settings.
+      - name: Publish to the Snap Store
+        if: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable
+
+  build-flatpak:
+    runs-on: ubuntu-24.04
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:kde-6.7
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: minnow.flatpak
+          manifest-path: packaging/flatpak/net.minnow.Minnow.yaml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+  create-release:
+    needs: [build-arch-binary, build-deb, build-rpm, build-snap, build-flatpak]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source tarball
+        run: git archive --format=tar.gz --prefix=minnow-${GITHUB_REF_NAME#v}/ -o minnow-${GITHUB_REF_NAME}-src.tar.gz HEAD
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          cp minnow-*-src.tar.gz release-files/
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.flatpak' -o -name '*.tar.gz' \) -exec cp {} release-files/ \;
+          ls -la release-files/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
