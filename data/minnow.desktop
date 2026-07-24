@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Minnow
+GenericName=File Manager
+Comment=A simple, lightweight file manager for KDE
+Exec=minnow %f
+Icon=minnow
+Terminal=false
+Categories=Qt;KDE;System;FileTools;FileManager;
+MimeType=inode/directory;
+StartupNotify=true
