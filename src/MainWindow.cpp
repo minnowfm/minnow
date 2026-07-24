@@ -368,7 +368,7 @@ void MainWindow::navigateTo(const QUrl &url, bool addToHistory)
     applySortForCurrentFolder();
     applyViewModeForCurrentFolder();
     const QString name = url.fileName();
-    setWindowTitle(QStringLiteral("Minnow — %1").arg(name.isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : name));
+    setWindowTitle(QStringLiteral("Minnow - %1").arg(name.isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : name));
 
     if (addToHistory) {
         m_history.resize(m_historyIndex + 1);
