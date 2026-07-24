@@ -10,9 +10,31 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      run_arch:
+        description: 'Build Arch binary tarball'
+        type: boolean
+        default: true
+      run_deb:
+        description: 'Build .deb'
+        type: boolean
+        default: true
+      run_rpm:
+        description: 'Build .rpm'
+        type: boolean
+        default: true
+      run_snap:
+        description: 'Build Snap'
+        type: boolean
+        default: true
+      run_flatpak:
+        description: 'Build Flatpak'
+        type: boolean
+        default: true
 
 jobs:
   build-arch-binary:
+    if: ${{ github.event_name == 'push' || inputs.run_arch }}
     runs-on: ubuntu-24.04
     container: archlinux:latest
     steps:
@@ -36,6 +58,7 @@ jobs:
           path: minnow-*-x86_64.tar.gz
 
   build-deb:
+    if: ${{ github.event_name == 'push' || inputs.run_deb }}
     runs-on: ubuntu-24.04
     # Ubuntu 24.04's (noble) default repos predate KF6, so libkf6*-dev isn't installable
     # there; 24.10 (oracular) shipped with Plasma 6/KF6 by default.
@@ -57,6 +80,7 @@ jobs:
           path: dist/*.deb
 
   build-rpm:
+    if: ${{ github.event_name == 'push' || inputs.run_rpm }}
     runs-on: ubuntu-24.04
     container: fedora:40
     steps:
@@ -74,6 +98,7 @@ jobs:
           path: dist/*.rpm
 
   build-snap:
+    if: ${{ github.event_name == 'push' || inputs.run_snap }}
     runs-on: ubuntu-24.04
     # `secrets` isn't a recognized context inside a step's `if:` directly - routing it
     # through a job-level env var is the standard workaround.
@@ -99,6 +124,7 @@ jobs:
           release: stable
 
   build-flatpak:
+    if: ${{ github.event_name == 'push' || inputs.run_flatpak }}
     runs-on: ubuntu-24.04
     container:
       image: bilelmoussaoui/flatpak-github-actions:kde-6.7
