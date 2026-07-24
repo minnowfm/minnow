@@ -3,10 +3,12 @@
 #include "PlacesSidebar.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
@@ -14,6 +16,7 @@
 #include <QListView>
 #include <QMenu>
 #include <QMimeData>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStorageInfo>
@@ -47,11 +50,15 @@ MainWindow::MainWindow(QWidget *parent)
 {
     resize(960, 620);
 
+    loadFolderSort();
     setupToolBar();
     setupSidebar();
     setupViews();
     setupStatusBar();
     applyStyle();
+
+    QSettings settings;
+    setIconSize(settings.value(QStringLiteral("View/IconSize"), 48).toInt());
 
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
@@ -112,6 +119,86 @@ void MainWindow::setupToolBar()
     toolbar->addWidget(m_gridViewButton);
     toolbar->addWidget(m_listViewButton);
 
+    m_iconSizeButton = new QToolButton(this);
+    m_iconSizeButton->setIcon(QIcon::fromTheme(QStringLiteral("zoom-fit-best")));
+    m_iconSizeButton->setToolTip(tr("Icon size"));
+    m_iconSizeButton->setPopupMode(QToolButton::InstantPopup);
+
+    auto *sizeMenu = new QMenu(m_iconSizeButton);
+    auto *sizeGroup = new QActionGroup(sizeMenu);
+    sizeGroup->setExclusive(true);
+    static const QList<QPair<QString, int>> sizes = {
+        {tr("Small"), 32},
+        {tr("Medium"), 48},
+        {tr("Large"), 64},
+        {tr("Huge"), 96},
+    };
+    for (const auto &entry : sizes) {
+        QAction *act = sizeMenu->addAction(entry.first);
+        act->setCheckable(true);
+        act->setData(entry.second);
+        sizeGroup->addAction(act);
+        const int size = entry.second;
+        connect(act, &QAction::triggered, this, [this, size] {
+            setIconSize(size);
+        });
+    }
+    connect(sizeMenu, &QMenu::aboutToShow, this, [this, sizeGroup] {
+        const int current = m_gridView->iconSize().width();
+        for (QAction *a : sizeGroup->actions())
+            a->setChecked(a->data().toInt() == current);
+    });
+    m_iconSizeButton->setMenu(sizeMenu);
+    toolbar->addWidget(m_iconSizeButton);
+
+    m_sortByButton = new QToolButton(this);
+    m_sortByButton->setIcon(QIcon::fromTheme(QStringLiteral("view-sort-ascending")));
+    m_sortByButton->setToolTip(tr("Sort by"));
+    m_sortByButton->setPopupMode(QToolButton::InstantPopup);
+
+    auto *sortMenu = new QMenu(m_sortByButton);
+    auto *columnGroup = new QActionGroup(sortMenu);
+    columnGroup->setExclusive(true);
+    static const QList<QPair<QString, int>> sortColumns = {
+        {tr("Name"), 0}, {tr("Size"), 1}, {tr("Date modified"), 2},
+        {tr("Permissions"), 3}, {tr("Owner"), 4}, {tr("Group"), 5}, {tr("Type"), 6},
+    };
+    for (const auto &entry : sortColumns) {
+        QAction *act = sortMenu->addAction(entry.first);
+        act->setCheckable(true);
+        act->setData(entry.second);
+        columnGroup->addAction(act);
+        const int column = entry.second;
+        connect(act, &QAction::triggered, this, [this, column] {
+            m_listView->header()->setSortIndicator(column, m_listView->header()->sortIndicatorOrder());
+        });
+    }
+    sortMenu->addSeparator();
+    QAction *ascAction = sortMenu->addAction(tr("Ascending"));
+    ascAction->setCheckable(true);
+    QAction *descAction = sortMenu->addAction(tr("Descending"));
+    descAction->setCheckable(true);
+    auto *orderGroup = new QActionGroup(sortMenu);
+    orderGroup->setExclusive(true);
+    orderGroup->addAction(ascAction);
+    orderGroup->addAction(descAction);
+    connect(ascAction, &QAction::triggered, this, [this] {
+        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::AscendingOrder);
+    });
+    connect(descAction, &QAction::triggered, this, [this] {
+        m_listView->header()->setSortIndicator(m_listView->header()->sortIndicatorSection(), Qt::DescendingOrder);
+    });
+    connect(sortMenu, &QMenu::aboutToShow, this, [this, columnGroup, ascAction, descAction] {
+        const int col = m_listView->header()->sortIndicatorSection();
+        const Qt::SortOrder order = m_listView->header()->sortIndicatorOrder();
+        for (QAction *a : columnGroup->actions())
+            a->setChecked(a->data().toInt() == col);
+        ascAction->setChecked(order == Qt::AscendingOrder);
+        descAction->setChecked(order == Qt::DescendingOrder);
+    });
+    m_sortByButton->setMenu(sortMenu);
+    toolbar->addWidget(m_sortByButton);
+
     connect(m_backButton, &QToolButton::clicked, this, &MainWindow::goBack);
     connect(m_forwardButton, &QToolButton::clicked, this, &MainWindow::goForward);
     connect(m_upButton, &QToolButton::clicked, this, &MainWindow::goUp);
@@ -164,7 +251,6 @@ void MainWindow::setupViews()
     m_listView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_listView->setFrameShape(QFrame::NoFrame);
-    m_listView->sortByColumn(0, Qt::AscendingOrder);
 
     m_viewStack = new QStackedWidget(this);
     m_viewStack->addWidget(m_gridView);
@@ -176,6 +262,7 @@ void MainWindow::setupViews()
     connect(m_gridView, &QWidget::customContextMenuRequested, this, &MainWindow::showViewContextMenu);
     connect(m_listView, &QWidget::customContextMenuRequested, this, &MainWindow::showViewContextMenu);
     connect(m_dirLister, &KCoreDirLister::completed, this, &MainWindow::updateStatusBar);
+    connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &MainWindow::onSortIndicatorChanged);
 }
 
 void MainWindow::setupStatusBar()
@@ -233,6 +320,7 @@ void MainWindow::navigateTo(const QUrl &url, bool addToHistory)
     m_dirLister->openUrl(url);
     m_addressBar->setText(url.toDisplayString(QUrl::PreferLocalFile));
     m_sidebar->setCurrentUrl(url);
+    applySortForCurrentFolder();
     const QString name = url.fileName();
     setWindowTitle(QStringLiteral("Minnow — %1").arg(name.isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : name));
 
@@ -314,6 +402,60 @@ void MainWindow::onFilterTextChanged(const QString &text)
     m_proxyModel->setFilterFixedString(text);
 }
 
+void MainWindow::setIconSize(int size)
+{
+    m_gridView->setIconSize(QSize(size, size));
+    m_gridView->setGridSize(QSize(size + 48, size + 40));
+    QSettings settings;
+    settings.setValue(QStringLiteral("View/IconSize"), size);
+}
+
+void MainWindow::onSortIndicatorChanged(int column, Qt::SortOrder order)
+{
+    if (m_restoringSort || !m_currentUrl.isValid())
+        return;
+    saveFolderSort(m_currentUrl.toString(), column, order);
+}
+
+void MainWindow::applySortForCurrentFolder()
+{
+    const FolderSort fs = m_folderSort.value(m_currentUrl.toString());
+    m_restoringSort = true;
+    m_listView->header()->setSortIndicator(fs.column, fs.order);
+    m_restoringSort = false;
+}
+
+void MainWindow::loadFolderSort()
+{
+    QSettings settings;
+    const int size = settings.beginReadArray(QStringLiteral("FolderSort"));
+    for (int i = 0; i < size; ++i) {
+        settings.setArrayIndex(i);
+        const QString url = settings.value(QStringLiteral("url")).toString();
+        const int column = settings.value(QStringLiteral("column"), 0).toInt();
+        const int order = settings.value(QStringLiteral("order"), int(Qt::AscendingOrder)).toInt();
+        if (!url.isEmpty())
+            m_folderSort[url] = FolderSort{column, static_cast<Qt::SortOrder>(order)};
+    }
+    settings.endArray();
+}
+
+void MainWindow::saveFolderSort(const QString &folderKey, int column, Qt::SortOrder order)
+{
+    m_folderSort[folderKey] = FolderSort{column, order};
+
+    QSettings settings;
+    settings.beginWriteArray(QStringLiteral("FolderSort"));
+    int idx = 0;
+    for (auto it = m_folderSort.constBegin(); it != m_folderSort.constEnd(); ++it) {
+        settings.setArrayIndex(idx++);
+        settings.setValue(QStringLiteral("url"), it.key());
+        settings.setValue(QStringLiteral("column"), it.value().column);
+        settings.setValue(QStringLiteral("order"), int(it.value().order));
+    }
+    settings.endArray();
+}
+
 void MainWindow::updateStatusBar()
 {
     const int count = m_proxyModel->rowCount();
@@ -335,12 +477,28 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
     QMenu menu(this);
     const QList<QUrl> selected = selectedUrls();
 
+    KFileItem singleDirItem;
+    if (view->selectionModel() && view->selectionModel()->selectedRows().size() == 1) {
+        const QModelIndex idx = view->selectionModel()->selectedRows().first();
+        const KFileItem it = m_dirModel->itemForIndex(m_proxyModel->mapToSource(idx));
+        if (!it.isNull() && it.isDir())
+            singleDirItem = it;
+    }
+
     if (!selected.isEmpty()) {
         QAction *openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
         connect(openAction, &QAction::triggered, this, [this, selected] {
             for (const QUrl &url : selected)
                 FileOperations::openUrl(url, this);
         });
+
+        if (!singleDirItem.isNull() && !m_sidebar->isPinned(singleDirItem.url())) {
+            QAction *pinAction = menu.addAction(QIcon::fromTheme(QStringLiteral("bookmark-new")), tr("Pin to Sidebar"));
+            const QUrl dirUrl = singleDirItem.url();
+            connect(pinAction, &QAction::triggered, this, [this, dirUrl] {
+                m_sidebar->pinPlace(dirUrl);
+            });
+        }
 
         menu.addSeparator();
 
@@ -403,6 +561,14 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
         if (ok && !name.isEmpty())
             FileOperations::mkdir(m_currentUrl, name, this);
     });
+
+    if (!m_sidebar->isPinned(m_currentUrl)) {
+        QAction *pinCurrentAction =
+            menu.addAction(QIcon::fromTheme(QStringLiteral("bookmark-new")), tr("Pin This Folder to Sidebar"));
+        connect(pinCurrentAction, &QAction::triggered, this, [this] {
+            m_sidebar->pinPlace(m_currentUrl);
+        });
+    }
 
     menu.exec(view->viewport()->mapToGlobal(pos));
 }

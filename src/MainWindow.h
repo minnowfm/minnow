@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QMainWindow>
 #include <QUrl>
 #include <QVector>
@@ -35,6 +36,8 @@ private Q_SLOTS:
     void switchToListView();
     void updateStatusBar();
     void onFilterTextChanged(const QString &text);
+    void setIconSize(int size);
+    void onSortIndicatorChanged(int column, Qt::SortOrder order);
 
 private:
     void setupToolBar();
@@ -44,6 +47,7 @@ private:
     void applyStyle();
     QList<QUrl> selectedUrls() const;
     QAbstractItemView *currentView() const;
+    void applySortForCurrentFolder();
 
     QToolButton *m_backButton = nullptr;
     QToolButton *m_forwardButton = nullptr;
@@ -52,6 +56,8 @@ private:
     QLineEdit *m_filterEdit = nullptr;
     QToolButton *m_gridViewButton = nullptr;
     QToolButton *m_listViewButton = nullptr;
+    QToolButton *m_iconSizeButton = nullptr;
+    QToolButton *m_sortByButton = nullptr;
 
     PlacesSidebar *m_sidebar = nullptr;
     QStackedWidget *m_viewStack = nullptr;
@@ -68,4 +74,14 @@ private:
     QVector<QUrl> m_history;
     int m_historyIndex = -1;
     QUrl m_currentUrl;
+
+    struct FolderSort {
+        int column = 0;
+        Qt::SortOrder order = Qt::AscendingOrder;
+    };
+    QHash<QString, FolderSort> m_folderSort;
+    bool m_restoringSort = false;
+
+    void loadFolderSort();
+    void saveFolderSort(const QString &folderKey, int column, Qt::SortOrder order);
 };
