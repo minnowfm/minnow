@@ -60,9 +60,9 @@ jobs:
   build-deb:
     if: ${{ github.event_name == 'push' || inputs.run_deb }}
     runs-on: ubuntu-24.04
-    # Ubuntu 24.04's (noble) default repos predate KF6, so libkf6*-dev isn't installable
-    # there; 24.10 (oracular) shipped with Plasma 6/KF6 by default.
-    container: ubuntu:24.10
+    # .deb is Debian's native format - build on actual Debian rather than Ubuntu. Trixie
+    # (13, current testing/soon-stable) has current KF6; bookworm (stable) predates it.
+    container: debian:trixie
     steps:
       - name: Install build dependencies
         run: |

@@ -19,7 +19,7 @@ compression: lzo
 apps:
   minnow:
     command: usr/bin/minnow
-    extensions: [kde-neon]
+    extensions: [kde-neon-6]
     plugs:
       - home
       - removable-media
@@ -37,7 +37,7 @@ parts:
       - -DCMAKE_INSTALL_PREFIX=/usr
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_TESTING=OFF
-    # The kde-neon extension (on the app, above) pulls in the KDE Platform/SDK content
+    # The kde-neon-6 extension (on the app, above) pulls in the KDE Platform/SDK content
     # snaps, which provide Qt6 and KF6 headers/libraries at build and run time - no need
     # to list libkf6*-dev packages here, and their exact apt names vary across bases anyway.
     build-packages:

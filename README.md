@@ -94,7 +94,7 @@ this is Flathub's own review process, not something that can be automated from t
 
 ### Snap
 
-`packaging/snap/snapcraft.yaml` uses the `kde-neon` extension. Build with:
+`packaging/snap/snapcraft.yaml` uses the `kde-neon-6` extension. Build with:
 ```sh
 cd packaging/snap && snapcraft
 ```
