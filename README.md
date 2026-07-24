@@ -79,22 +79,9 @@ Two packages, under `packaging/aur/`:
 
 Both are published at [aur.archlinux.org/packages/minnow](https://aur.archlinux.org/packages/minnow)
 and [.../minnow-bin](https://aur.archlinux.org/packages/minnow-bin) - the AUR itself is not this
-repository.
-
-The `publish-aur` job in the release workflow handles updates automatically on every tagged
-release: it bumps `pkgver` in both PKGBUILDs, runs `updpkgsums`, regenerates `.SRCINFO`, pushes
-both to their AUR git repos, and commits the updated files back to `main` so the checked-in
-copies don't go stale. It needs an `AUR_SSH_PRIVATE_KEY` repo secret (an SSH private key
-authorized on the AUR account that owns these packages) to push - without that secret set,
-this job fails and the rest of the release still completes normally.
-
-**Note:** AUR has no concept of a deploy key scoped to one package - any key that can push to
-`minnow`/`minnow-bin` is a full AUR account SSH key, so this secret gives CI push access to
-every package on that account, not just these two.
-
-To do it by hand instead: bump `pkgver` in each PKGBUILD, run `updpkgsums`, regenerate
-`.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), and push each directory's contents to its own
-AUR git repo (`ssh://aur@aur.archlinux.org/minnow.git` and `.../minnow-bin.git`).
+repository. After bumping `pkgver`/tagging a new release, run `updpkgsums` in each directory,
+regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), and push each directory's contents
+to its own AUR git repo (`ssh://aur@aur.archlinux.org/minnow.git` and `.../minnow-bin.git`).
 
 ### Flatpak
 
