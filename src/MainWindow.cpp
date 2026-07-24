@@ -13,6 +13,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QInputDialog>
+#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
@@ -21,6 +22,7 @@
 #include <QPropertyAnimation>
 #include <QScrollBar>
 #include <QSettings>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QStorageInfo>
 #include <QToolBar>
@@ -295,6 +297,7 @@ void MainWindow::setupViews()
     m_gridView->setWordWrap(true);
     m_gridView->setUniformItemSizes(true);
     m_gridView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_gridView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_gridView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     m_gridView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_gridView->setFrameShape(QFrame::NoFrame);
@@ -309,6 +312,7 @@ void MainWindow::setupViews()
     m_listView->setSortingEnabled(true);
     m_listView->setAllColumnsShowFocus(true);
     m_listView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_listView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_listView->setEditTriggers(QAbstractItemView::EditKeyPressed);
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_listView->setFrameShape(QFrame::NoFrame);
@@ -321,10 +325,18 @@ void MainWindow::setupViews()
     m_viewStack->addWidget(m_listView);
     m_viewStack->setCurrentWidget(m_gridView);
 
-    connect(m_gridView, &QAbstractItemView::activated, this, &MainWindow::onItemActivated);
-    connect(m_listView, &QAbstractItemView::activated, this, &MainWindow::onItemActivated);
+    connect(m_gridView, &QAbstractItemView::doubleClicked, this, &MainWindow::onItemActivated);
+    connect(m_listView, &QAbstractItemView::doubleClicked, this, &MainWindow::onItemActivated);
     connect(m_gridView, &QWidget::customContextMenuRequested, this, &MainWindow::showViewContextMenu);
     connect(m_listView, &QWidget::customContextMenuRequested, this, &MainWindow::showViewContextMenu);
+
+    for (QAbstractItemView *view : {static_cast<QAbstractItemView *>(m_gridView), static_cast<QAbstractItemView *>(m_listView)}) {
+        for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
+            auto *shortcut = new QShortcut(QKeySequence(key), view);
+            shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+            connect(shortcut, &QShortcut::activated, this, [this, view] { onItemActivated(view->currentIndex()); });
+        }
+    }
     connect(m_dirLister, &KCoreDirLister::completed, this, &MainWindow::updateStatusBar);
     connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &MainWindow::onSortIndicatorChanged);
 }
@@ -337,9 +349,8 @@ void MainWindow::setupStatusBar()
 
     m_itemCountLabel = new QLabel(statusRow);
     m_freeSpaceLabel = new QLabel(statusRow);
-    const QString labelStyle = QStringLiteral("color: palette(mid); font-size: 11px;");
-    m_itemCountLabel->setStyleSheet(labelStyle);
-    m_freeSpaceLabel->setStyleSheet(labelStyle);
+    m_itemCountLabel->setObjectName(QStringLiteral("footerLabel"));
+    m_freeSpaceLabel->setObjectName(QStringLiteral("footerLabel"));
 
     statusLayout->addWidget(m_itemCountLabel);
     statusLayout->addStretch(1);
@@ -354,6 +365,9 @@ void MainWindow::applyStyle()
     const bool dark = windowColor.lightness() < 128;
     const QColor cardColor = dark ? windowColor.lighter(125) : windowColor.lighter(106);
     const QColor borderColor = dark ? windowColor.lighter(150) : windowColor.darker(112);
+    const QColor handleColor = dark ? windowColor.lighter(200) : windowColor.darker(160);
+    const QColor footerTextColor = dark ? QColor(190, 190, 190) : QColor(90, 90, 90);
+    const QColor hoverColor = dark ? cardColor.lighter(115) : cardColor.darker(105);
 
     setStyleSheet(
         QStringLiteral("QMainWindow { background: palette(window); }"
@@ -366,10 +380,13 @@ void MainWindow::applyStyle()
                         "QListWidget::item:selected { border-radius: 10px; }"
                         "QListView { border: none; background: transparent; }"
                         "QListView::item { border-radius: 12px; padding: 6px; }"
-                        "QListView::item:selected, QListView::item:hover { border-radius: 12px; }"
+                        "QListView::item:hover { background: %5; border-radius: 12px; }"
+                        "QListView::item:selected { background: palette(highlight); color: palette(highlighted-text); border-radius: 12px; }"
                         "QTreeView { border: none; background: transparent; }"
                         "QTreeView::item { border-radius: 10px; }"
-                        "QTreeView::item:selected, QTreeView::item:hover { border-radius: 10px; }"
+                        "QTreeView::item:hover { background: %5; border-radius: 10px; }"
+                        "QTreeView::item:selected { background: palette(highlight); color: palette(highlighted-text); border-radius: 10px; }"
+                        "QLabel#footerLabel { color: %4; font-size: 11px; }"
                         "QScrollBar:vertical { background: %1; border: none; width: 10px; margin: 0px; }"
                         "QScrollBar::handle:vertical { background: %3; border-radius: 5px; min-height: 24px; }"
                         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: %1; border: none; }"
@@ -379,7 +396,7 @@ void MainWindow::applyStyle()
                         "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: %1; border: none; }"
                         "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: %1; border: none; }"
                         "QScrollBar::corner { background: %1; border: none; }")
-            .arg(cardColor.name(), borderColor.name(), (dark ? windowColor.lighter(200) : windowColor.darker(160)).name()));
+            .arg(cardColor.name(), borderColor.name(), handleColor.name(), footerTextColor.name(), hoverColor.name()));
 }
 
 QAbstractItemView *MainWindow::currentView() const
@@ -569,6 +586,13 @@ void MainWindow::updateStatusBar()
 void MainWindow::showViewContextMenu(const QPoint &pos)
 {
     QAbstractItemView *view = currentView();
+
+    const QModelIndex indexUnderCursor = view->indexAt(pos);
+    if (indexUnderCursor.isValid() && view->selectionModel() && !view->selectionModel()->isSelected(indexUnderCursor)) {
+        view->selectionModel()->select(indexUnderCursor, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        view->setCurrentIndex(indexUnderCursor);
+    }
+
     QMenu menu(this);
     const QList<QUrl> selected = selectedUrls();
 
