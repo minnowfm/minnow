@@ -57,7 +57,6 @@ private:
     QToolButton *m_upButton = nullptr;
     QLineEdit *m_addressBar = nullptr;
     QLineEdit *m_filterEdit = nullptr;
-    QToolButton *m_iconSizeButton = nullptr;
 
     PlacesSidebar *m_sidebar = nullptr;
     QStackedWidget *m_viewStack = nullptr;

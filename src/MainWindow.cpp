@@ -166,38 +166,6 @@ void MainWindow::setupToolBar()
     m_filterEdit->setMaximumWidth(200);
     toolbar->addWidget(m_filterEdit);
 
-    m_iconSizeButton = new QToolButton(this);
-    m_iconSizeButton->setIcon(QIcon::fromTheme(QStringLiteral("zoom-fit-best")));
-    m_iconSizeButton->setToolTip(tr("Icon size"));
-    m_iconSizeButton->setPopupMode(QToolButton::InstantPopup);
-
-    auto *sizeMenu = new QMenu(m_iconSizeButton);
-    auto *sizeGroup = new QActionGroup(sizeMenu);
-    sizeGroup->setExclusive(true);
-    static const QList<QPair<QString, int>> sizes = {
-        {tr("Small"), 32},
-        {tr("Medium"), 48},
-        {tr("Large"), 64},
-        {tr("Huge"), 96},
-    };
-    for (const auto &entry : sizes) {
-        QAction *act = sizeMenu->addAction(entry.first);
-        act->setCheckable(true);
-        act->setData(entry.second);
-        sizeGroup->addAction(act);
-        const int size = entry.second;
-        connect(act, &QAction::triggered, this, [this, size] {
-            setIconSize(size);
-        });
-    }
-    connect(sizeMenu, &QMenu::aboutToShow, this, [this, sizeGroup] {
-        const int current = m_gridView->iconSize().width();
-        for (QAction *a : sizeGroup->actions())
-            a->setChecked(a->data().toInt() == current);
-    });
-    m_iconSizeButton->setMenu(sizeMenu);
-    toolbar->addWidget(m_iconSizeButton);
-
     connect(m_backButton, &QToolButton::clicked, this, &MainWindow::goBack);
     connect(m_forwardButton, &QToolButton::clicked, this, &MainWindow::goForward);
     connect(m_upButton, &QToolButton::clicked, this, &MainWindow::goUp);
@@ -691,6 +659,28 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
     viewGroup->addAction(listAction);
     connect(iconsAction, &QAction::triggered, this, &MainWindow::switchToGridView);
     connect(listAction, &QAction::triggered, this, &MainWindow::switchToListView);
+
+    viewMenu->addSeparator();
+    QMenu *sizeMenu = viewMenu->addMenu(tr("Icon Size"));
+    static const QList<QPair<QString, int>> sizes = {
+        {tr("Small"), 32},
+        {tr("Medium"), 48},
+        {tr("Large"), 64},
+        {tr("Huge"), 96},
+    };
+    auto *sizeGroup = new QActionGroup(sizeMenu);
+    sizeGroup->setExclusive(true);
+    const int currentSize = m_gridView->iconSize().width();
+    for (const auto &entry : sizes) {
+        QAction *act = sizeMenu->addAction(entry.first);
+        act->setCheckable(true);
+        act->setChecked(entry.second == currentSize);
+        sizeGroup->addAction(act);
+        const int size = entry.second;
+        connect(act, &QAction::triggered, this, [this, size] {
+            setIconSize(size);
+        });
+    }
 
     QMenu *sortMenu = menu.addMenu(tr("Sort by"));
     static const QList<QPair<QString, int>> sortColumns = {
