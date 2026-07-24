@@ -27,8 +27,9 @@ private:
     };
 
     void addPlace(const QString &label, const QString &iconName, const QUrl &url, bool pinned = false);
-    void ensureSeparator();
-    void ensureDrivesSeparator();
+    QListWidgetItem *addHeaderItem(const QString &title);
+    void ensureBookmarksHeader();
+    void ensureDevicesHeader();
     void loadPinned();
     void savePinned();
     void rebuildFixedPlaces();
@@ -38,6 +39,7 @@ private:
     void showSidebarContextMenu(const QPoint &pos);
 
     QVector<FixedPlace> m_fixedPlaces;
-    QListWidgetItem *m_separator = nullptr;
-    QListWidgetItem *m_drivesSeparator = nullptr;
+    QListWidgetItem *m_placesHeader = nullptr;
+    QListWidgetItem *m_bookmarksHeader = nullptr;
+    QListWidgetItem *m_devicesHeader = nullptr;
 };

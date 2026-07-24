@@ -1,6 +1,7 @@
 #include "PlacesSidebar.h"
 
 #include <QDir>
+#include <QFont>
 #include <QIcon>
 #include <QMenu>
 #include <QSet>
@@ -36,7 +37,7 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     setFixedWidth(150);
     setIconSize(QSize(18, 18));
     setSpacing(2);
-    setUniformItemSizes(true);
+    setUniformItemSizes(false);
     setContextMenuPolicy(Qt::CustomContextMenu);
 
     m_fixedPlaces = {
@@ -55,6 +56,7 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
+    m_placesHeader = addHeaderItem(tr("Places"));
     rebuildFixedPlaces();
     loadPinned();
     refreshDrives();
@@ -72,30 +74,39 @@ void PlacesSidebar::addPlace(const QString &label, const QString &iconName, cons
     auto *item = new QListWidgetItem(QIcon::fromTheme(iconName), label);
     item->setData(UrlRole, url);
     item->setData(PinnedRole, pinned);
-    if (pinned && m_separator)
-        insertItem(row(m_separator) + 1, item);
+    if (pinned && m_bookmarksHeader)
+        insertItem(row(m_bookmarksHeader) + 1, item);
     else
         addItem(item);
 }
 
-void PlacesSidebar::ensureSeparator()
+QListWidgetItem *PlacesSidebar::addHeaderItem(const QString &title)
 {
-    if (m_separator)
-        return;
-    m_separator = new QListWidgetItem();
-    m_separator->setFlags(Qt::NoItemFlags);
-    m_separator->setSizeHint(QSize(1, 9));
-    addItem(m_separator);
+    auto *item = new QListWidgetItem(title.toUpper());
+    item->setFlags(Qt::NoItemFlags);
+    QFont headerFont = font();
+    headerFont.setPointSizeF(headerFont.pointSizeF() * 0.82);
+    headerFont.setBold(true);
+    item->setFont(headerFont);
+    QColor textColor = palette().color(QPalette::WindowText);
+    textColor.setAlpha(120);
+    item->setForeground(textColor);
+    addItem(item);
+    return item;
 }
 
-void PlacesSidebar::ensureDrivesSeparator()
+void PlacesSidebar::ensureBookmarksHeader()
 {
-    if (m_drivesSeparator)
+    if (m_bookmarksHeader)
         return;
-    m_drivesSeparator = new QListWidgetItem();
-    m_drivesSeparator->setFlags(Qt::NoItemFlags);
-    m_drivesSeparator->setSizeHint(QSize(1, 9));
-    addItem(m_drivesSeparator);
+    m_bookmarksHeader = addHeaderItem(tr("Bookmarks"));
+}
+
+void PlacesSidebar::ensureDevicesHeader()
+{
+    if (m_devicesHeader)
+        return;
+    m_devicesHeader = addHeaderItem(tr("Devices"));
 }
 
 bool PlacesSidebar::isFixedPlaceVisible(const QString &settingsKey) const
@@ -115,14 +126,14 @@ void PlacesSidebar::rebuildFixedPlaces()
 {
     for (int i = count() - 1; i >= 0; --i) {
         QListWidgetItem *it = item(i);
-        if (it == m_separator || it == m_drivesSeparator)
+        if (it == m_placesHeader || it == m_bookmarksHeader || it == m_devicesHeader)
             continue;
         if (it->data(PinnedRole).toBool() || it->data(DriveRole).toBool())
             continue;
         delete it;
     }
 
-    int insertPos = 0;
+    int insertPos = row(m_placesHeader) + 1;
     for (const auto &place : m_fixedPlaces) {
         if (!isFixedPlaceVisible(place.settingsKey))
             continue;
@@ -140,18 +151,28 @@ void PlacesSidebar::refreshDrives()
         if (it->data(DriveRole).toBool())
             delete it;
     }
-    if (m_drivesSeparator) {
-        delete m_drivesSeparator;
-        m_drivesSeparator = nullptr;
+    if (m_devicesHeader) {
+        delete m_devicesHeader;
+        m_devicesHeader = nullptr;
     }
 
     const QString homePath = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)).canonicalPath();
+    static const QSet<QString> excludedMountPoints = {
+        QStringLiteral("/boot"),
+        QStringLiteral("/boot/efi"),
+    };
+
     QVector<QStorageInfo> drives;
     for (const QStorageInfo &info : QStorageInfo::mountedVolumes()) {
         if (!isRealVolume(info))
             continue;
         const QString rootPath = info.rootPath();
-        if (rootPath == QStringLiteral("/") || rootPath == homePath)
+        if (rootPath == QStringLiteral("/"))
+            continue;
+        if (excludedMountPoints.contains(rootPath))
+            continue;
+        const QString rootWithSlash = rootPath.endsWith(QLatin1Char('/')) ? rootPath : rootPath + QLatin1Char('/');
+        if (homePath == rootPath || homePath.startsWith(rootWithSlash))
             continue;
         drives << info;
     }
@@ -159,7 +180,7 @@ void PlacesSidebar::refreshDrives()
     if (drives.isEmpty())
         return;
 
-    ensureDrivesSeparator();
+    ensureDevicesHeader();
     for (const QStorageInfo &info : drives) {
         QString label = info.name();
         if (label.isEmpty())
@@ -189,7 +210,7 @@ void PlacesSidebar::pinPlace(const QUrl &url)
     if (isPinned(url))
         return;
 
-    ensureSeparator();
+    ensureBookmarksHeader();
     const QString name = url.fileName().isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : url.fileName();
     addPlace(name, QStringLiteral("folder"), url, true);
     savePinned();
@@ -204,7 +225,7 @@ void PlacesSidebar::loadPinned()
         const QUrl url = settings.value(QStringLiteral("url")).toUrl();
         const QString name = settings.value(QStringLiteral("name")).toString();
         if (url.isValid() && !isPinned(url)) {
-            ensureSeparator();
+            ensureBookmarksHeader();
             addPlace(name, QStringLiteral("folder"), url, true);
         }
     }
@@ -244,9 +265,9 @@ void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
                     break;
                 }
             }
-            if (!anyPinned && m_separator) {
-                delete m_separator;
-                m_separator = nullptr;
+            if (!anyPinned && m_bookmarksHeader) {
+                delete m_bookmarksHeader;
+                m_bookmarksHeader = nullptr;
             }
             savePinned();
         });

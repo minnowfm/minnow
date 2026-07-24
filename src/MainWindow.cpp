@@ -588,9 +588,16 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
     QAbstractItemView *view = currentView();
 
     const QModelIndex indexUnderCursor = view->indexAt(pos);
-    if (indexUnderCursor.isValid() && view->selectionModel() && !view->selectionModel()->isSelected(indexUnderCursor)) {
-        view->selectionModel()->select(indexUnderCursor, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-        view->setCurrentIndex(indexUnderCursor);
+    if (view->selectionModel()) {
+        if (indexUnderCursor.isValid()) {
+            if (!view->selectionModel()->isSelected(indexUnderCursor)) {
+                view->selectionModel()->select(indexUnderCursor,
+                                                QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                view->setCurrentIndex(indexUnderCursor);
+            }
+        } else {
+            view->selectionModel()->clearSelection();
+        }
     }
 
     QMenu menu(this);
