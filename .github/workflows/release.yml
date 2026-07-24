@@ -72,6 +72,10 @@ jobs:
 
   build-snap:
     runs-on: ubuntu-24.04
+    # `secrets` isn't a recognized context inside a step's `if:` directly - routing it
+    # through a job-level env var is the standard workaround.
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
     steps:
       - uses: actions/checkout@v4
       - uses: snapcore/action-build@v1
@@ -82,13 +86,11 @@ jobs:
         with:
           name: snap-package
           path: ${{ steps.build.outputs.snap }}
-      # Requires a SNAPCRAFT_STORE_CREDENTIALS secret (from `snapcraft export-login`) - skipped
-      # entirely until that secret is added in repo settings.
+      # Skipped entirely until SNAPCRAFT_STORE_CREDENTIALS is added in repo settings
+      # (from `snapcraft export-login`).
       - name: Publish to the Snap Store
-        if: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
         uses: snapcore/action-publish@v1
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ steps.build.outputs.snap }}
           release: stable
