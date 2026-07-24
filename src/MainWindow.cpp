@@ -324,16 +324,26 @@ void MainWindow::applyStyle()
                         "QTreeView::item:hover { background: %5; border-radius: 10px; }"
                         "QTreeView::item:selected { background: palette(highlight); color: palette(highlighted-text); border-radius: 10px; }"
                         "QLabel#footerLabel { color: %4; font-size: 11px; }"
-                        "QScrollBar:vertical { background: %1; border: none; width: 10px; margin: 0px; }"
-                        "QScrollBar::handle:vertical { background: %3; border-radius: 5px; min-height: 24px; }"
-                        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: %1; border: none; }"
-                        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: %1; border: none; }"
-                        "QScrollBar:horizontal { background: %1; border: none; height: 10px; margin: 0px; }"
-                        "QScrollBar::handle:horizontal { background: %3; border-radius: 5px; min-width: 24px; }"
-                        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: %1; border: none; }"
-                        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: %1; border: none; }"
-                        "QScrollBar::corner { background: %1; border: none; }")
-            .arg(cardColor.name(), borderColor.name(), handleColor.name(), footerTextColor.name(), hoverColor.name()));
+                        "QFrame#contentCard QScrollBar:vertical, QFrame#contentCard QScrollBar:horizontal { background: %1; border: none; }"
+                        "QFrame#contentCard QScrollBar:vertical { width: 10px; margin: 0px; }"
+                        "QFrame#contentCard QScrollBar:horizontal { height: 10px; margin: 0px; }"
+                        "QFrame#contentCard QScrollBar::handle { background: %3; border-radius: 5px; }"
+                        "QFrame#contentCard QScrollBar::handle:vertical { min-height: 24px; }"
+                        "QFrame#contentCard QScrollBar::handle:horizontal { min-width: 24px; }"
+                        "QFrame#contentCard QScrollBar::add-line, QFrame#contentCard QScrollBar::sub-line { background: %1; border: none; width: 0px; height: 0px; }"
+                        "QFrame#contentCard QScrollBar::add-page, QFrame#contentCard QScrollBar::sub-page { background: %1; border: none; }"
+                        "QFrame#contentCard QScrollBar::corner { background: %1; border: none; }"
+                        "PlacesSidebar QScrollBar:vertical, PlacesSidebar QScrollBar:horizontal { background: %6; border: none; }"
+                        "PlacesSidebar QScrollBar:vertical { width: 10px; margin: 0px; }"
+                        "PlacesSidebar QScrollBar:horizontal { height: 10px; margin: 0px; }"
+                        "PlacesSidebar QScrollBar::handle { background: %3; border-radius: 5px; }"
+                        "PlacesSidebar QScrollBar::handle:vertical { min-height: 24px; }"
+                        "PlacesSidebar QScrollBar::handle:horizontal { min-width: 24px; }"
+                        "PlacesSidebar QScrollBar::add-line, PlacesSidebar QScrollBar::sub-line { background: %6; border: none; width: 0px; height: 0px; }"
+                        "PlacesSidebar QScrollBar::add-page, PlacesSidebar QScrollBar::sub-page { background: %6; border: none; }"
+                        "PlacesSidebar QScrollBar::corner { background: %6; border: none; }")
+            .arg(cardColor.name(), borderColor.name(), handleColor.name(), footerTextColor.name(), hoverColor.name())
+            .arg(windowColor.name()));
 }
 
 QAbstractItemView *MainWindow::currentView() const
@@ -581,6 +591,22 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
     QMenu menu(this);
     const QList<QUrl> selected = selectedUrls();
 
+    auto addPinAction = [this, &menu](const QString &label, const QUrl &url) {
+        if (m_sidebar->isPinned(url))
+            return;
+        const QStringList sections = m_sidebar->availableSections();
+        if (sections.size() <= 1) {
+            QAction *act = menu.addAction(QIcon::fromTheme(QStringLiteral("bookmark-new")), label);
+            connect(act, &QAction::triggered, this, [this, url] { m_sidebar->pinPlace(url); });
+        } else {
+            QMenu *pinMenu = menu.addMenu(QIcon::fromTheme(QStringLiteral("bookmark-new")), label);
+            for (const QString &section : sections) {
+                QAction *act = pinMenu->addAction(section);
+                connect(act, &QAction::triggered, this, [this, url, section] { m_sidebar->pinPlace(url, section); });
+            }
+        }
+    };
+
     KFileItem singleDirItem;
     if (view->selectionModel() && view->selectionModel()->selectedRows().size() == 1) {
         const QModelIndex idx = view->selectionModel()->selectedRows().first();
@@ -596,13 +622,8 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
                 FileOperations::openUrl(url, this);
         });
 
-        if (!singleDirItem.isNull() && !m_sidebar->isPinned(singleDirItem.url())) {
-            QAction *pinAction = menu.addAction(QIcon::fromTheme(QStringLiteral("bookmark-new")), tr("Pin to Sidebar"));
-            const QUrl dirUrl = singleDirItem.url();
-            connect(pinAction, &QAction::triggered, this, [this, dirUrl] {
-                m_sidebar->pinPlace(dirUrl);
-            });
-        }
+        if (!singleDirItem.isNull())
+            addPinAction(tr("Pin to Sidebar"), singleDirItem.url());
 
         menu.addSeparator();
 
@@ -719,13 +740,7 @@ void MainWindow::showViewContextMenu(const QPoint &pos)
             FileOperations::mkdir(m_currentUrl, name, this);
     });
 
-    if (!m_sidebar->isPinned(m_currentUrl)) {
-        QAction *pinCurrentAction =
-            menu.addAction(QIcon::fromTheme(QStringLiteral("bookmark-new")), tr("Pin This Folder to Sidebar"));
-        connect(pinCurrentAction, &QAction::triggered, this, [this] {
-            m_sidebar->pinPlace(m_currentUrl);
-        });
-    }
+    addPinAction(tr("Pin This Folder to Sidebar"), m_currentUrl);
 
     menu.exec(view->viewport()->mapToGlobal(pos));
 }

@@ -12,8 +12,9 @@ public:
     explicit PlacesSidebar(QWidget *parent = nullptr);
 
     void setCurrentUrl(const QUrl &url);
-    void pinPlace(const QUrl &url);
+    void pinPlace(const QUrl &url, const QString &section = QStringLiteral("Bookmarks"));
     bool isPinned(const QUrl &url) const;
+    QStringList availableSections() const;
 
 signals:
     void placeActivated(const QUrl &url);
@@ -26,20 +27,33 @@ private:
         QString settingsKey;
     };
 
-    void addPlace(const QString &label, const QString &iconName, const QUrl &url, bool pinned = false);
+    struct PinnedEntry {
+        QString name;
+        QUrl url;
+        QString section;
+    };
+
+    QListWidgetItem *addPlaceItem(const QString &label, const QString &iconName, const QUrl &url, bool pinned);
     QListWidgetItem *addHeaderItem(const QString &title);
-    void ensureBookmarksHeader();
-    void ensureDevicesHeader();
-    void loadPinned();
-    void savePinned();
-    void rebuildFixedPlaces();
+    void rebuildAll();
     void refreshDrives();
     bool isFixedPlaceVisible(const QString &settingsKey) const;
     void setFixedPlaceVisible(const QString &settingsKey, bool visible);
+    void createSection();
+    void deleteSection(const QString &name);
+    void loadPinned();
+    void savePinned();
+    void loadCustomSections();
+    void saveCustomSections();
     void showSidebarContextMenu(const QPoint &pos);
 
+    struct DriveEntry {
+        QString label;
+        QUrl url;
+    };
+
     QVector<FixedPlace> m_fixedPlaces;
-    QListWidgetItem *m_placesHeader = nullptr;
-    QListWidgetItem *m_bookmarksHeader = nullptr;
-    QListWidgetItem *m_devicesHeader = nullptr;
+    QVector<PinnedEntry> m_pinned;
+    QStringList m_customSections;
+    QVector<DriveEntry> m_drives;
 };

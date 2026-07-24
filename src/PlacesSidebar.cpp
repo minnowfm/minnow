@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QFont>
 #include <QIcon>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMenu>
 #include <QSet>
 #include <QSettings>
@@ -13,7 +15,12 @@ namespace
 {
 constexpr int PinnedRole = Qt::UserRole + 1;
 constexpr int UrlRole = Qt::UserRole;
-constexpr int DriveRole = Qt::UserRole + 2;
+constexpr int HeaderRole = Qt::UserRole + 2;
+constexpr int HeaderNameRole = Qt::UserRole + 3;
+
+const QString kDefaultSection = QStringLiteral("Bookmarks");
+const QString kPlacesHeader = QStringLiteral("Places");
+const QString kDevicesHeader = QStringLiteral("Devices");
 
 bool isRealVolume(const QStorageInfo &info)
 {
@@ -56,8 +63,7 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
-    m_placesHeader = addHeaderItem(tr("Places"));
-    rebuildFixedPlaces();
+    loadCustomSections();
     loadPinned();
     refreshDrives();
 
@@ -69,21 +75,21 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     connect(this, &QListWidget::customContextMenuRequested, this, &PlacesSidebar::showSidebarContextMenu);
 }
 
-void PlacesSidebar::addPlace(const QString &label, const QString &iconName, const QUrl &url, bool pinned)
+QListWidgetItem *PlacesSidebar::addPlaceItem(const QString &label, const QString &iconName, const QUrl &url, bool pinned)
 {
     auto *item = new QListWidgetItem(QIcon::fromTheme(iconName), label);
     item->setData(UrlRole, url);
     item->setData(PinnedRole, pinned);
-    if (pinned && m_bookmarksHeader)
-        insertItem(row(m_bookmarksHeader) + 1, item);
-    else
-        addItem(item);
+    addItem(item);
+    return item;
 }
 
 QListWidgetItem *PlacesSidebar::addHeaderItem(const QString &title)
 {
     auto *item = new QListWidgetItem(title.toUpper());
     item->setFlags(Qt::NoItemFlags);
+    item->setData(HeaderRole, true);
+    item->setData(HeaderNameRole, title);
     QFont headerFont = font();
     headerFont.setPointSizeF(headerFont.pointSizeF() * 0.82);
     headerFont.setBold(true);
@@ -93,20 +99,6 @@ QListWidgetItem *PlacesSidebar::addHeaderItem(const QString &title)
     item->setForeground(textColor);
     addItem(item);
     return item;
-}
-
-void PlacesSidebar::ensureBookmarksHeader()
-{
-    if (m_bookmarksHeader)
-        return;
-    m_bookmarksHeader = addHeaderItem(tr("Bookmarks"));
-}
-
-void PlacesSidebar::ensureDevicesHeader()
-{
-    if (m_devicesHeader)
-        return;
-    m_devicesHeader = addHeaderItem(tr("Devices"));
 }
 
 bool PlacesSidebar::isFixedPlaceVisible(const QString &settingsKey) const
@@ -119,115 +111,136 @@ void PlacesSidebar::setFixedPlaceVisible(const QString &settingsKey, bool visibl
 {
     QSettings settings;
     settings.setValue(QStringLiteral("Places/%1").arg(settingsKey), visible);
-    rebuildFixedPlaces();
+    rebuildAll();
 }
 
-void PlacesSidebar::rebuildFixedPlaces()
+void PlacesSidebar::rebuildAll()
 {
-    for (int i = count() - 1; i >= 0; --i) {
-        QListWidgetItem *it = item(i);
-        if (it == m_placesHeader || it == m_bookmarksHeader || it == m_devicesHeader)
-            continue;
-        if (it->data(PinnedRole).toBool() || it->data(DriveRole).toBool())
-            continue;
-        delete it;
+    clear();
+
+    addHeaderItem(kPlacesHeader);
+    for (const auto &place : m_fixedPlaces) {
+        if (isFixedPlaceVisible(place.settingsKey))
+            addPlaceItem(place.label, place.iconName, place.url, false);
     }
 
-    int insertPos = row(m_placesHeader) + 1;
-    for (const auto &place : m_fixedPlaces) {
-        if (!isFixedPlaceVisible(place.settingsKey))
+    const QStringList sections = QStringList{kDefaultSection} + m_customSections;
+    for (const QString &section : sections) {
+        const bool isCustom = section != kDefaultSection;
+        QVector<PinnedEntry> entries;
+        for (const auto &p : m_pinned)
+            if (p.section == section)
+                entries << p;
+        if (entries.isEmpty() && !isCustom)
             continue;
-        auto *item = new QListWidgetItem(QIcon::fromTheme(place.iconName), place.label);
-        item->setData(UrlRole, place.url);
-        item->setData(PinnedRole, false);
-        insertItem(insertPos++, item);
+        addHeaderItem(section);
+        for (const auto &p : entries)
+            addPlaceItem(p.name, QStringLiteral("folder"), p.url, true);
+    }
+
+    if (!m_drives.isEmpty()) {
+        addHeaderItem(kDevicesHeader);
+        for (const auto &drive : m_drives)
+            addPlaceItem(drive.label, QStringLiteral("drive-harddisk"), drive.url, false);
     }
 }
 
 void PlacesSidebar::refreshDrives()
 {
-    for (int i = count() - 1; i >= 0; --i) {
-        QListWidgetItem *it = item(i);
-        if (it->data(DriveRole).toBool())
-            delete it;
-    }
-    if (m_devicesHeader) {
-        delete m_devicesHeader;
-        m_devicesHeader = nullptr;
-    }
+    m_drives.clear();
 
     const QString homePath = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)).canonicalPath();
     static const QSet<QString> excludedMountPoints = {
         QStringLiteral("/boot"),
         QStringLiteral("/boot/efi"),
     };
-
-    QVector<QStorageInfo> drives;
     for (const QStorageInfo &info : QStorageInfo::mountedVolumes()) {
         if (!isRealVolume(info))
             continue;
         const QString rootPath = info.rootPath();
-        if (rootPath == QStringLiteral("/"))
-            continue;
-        if (excludedMountPoints.contains(rootPath))
+        if (rootPath == QStringLiteral("/") || excludedMountPoints.contains(rootPath))
             continue;
         const QString rootWithSlash = rootPath.endsWith(QLatin1Char('/')) ? rootPath : rootPath + QLatin1Char('/');
         if (homePath == rootPath || homePath.startsWith(rootWithSlash))
             continue;
-        drives << info;
-    }
-
-    if (drives.isEmpty())
-        return;
-
-    ensureDevicesHeader();
-    for (const QStorageInfo &info : drives) {
         QString label = info.name();
         if (label.isEmpty())
-            label = QDir(info.rootPath()).dirName();
+            label = QDir(rootPath).dirName();
         if (label.isEmpty())
-            label = info.rootPath();
-
-        auto *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("drive-harddisk")), label);
-        item->setData(UrlRole, QUrl::fromLocalFile(info.rootPath()));
-        item->setData(PinnedRole, false);
-        item->setData(DriveRole, true);
-        addItem(item);
+            label = rootPath;
+        m_drives << DriveEntry{label, QUrl::fromLocalFile(rootPath)};
     }
+
+    rebuildAll();
 }
 
 bool PlacesSidebar::isPinned(const QUrl &url) const
 {
-    for (int i = 0; i < count(); ++i) {
-        if (item(i)->data(UrlRole).toUrl() == url)
+    for (const auto &p : m_pinned)
+        if (p.url == url)
             return true;
-    }
+    for (const auto &place : m_fixedPlaces)
+        if (place.url == url)
+            return true;
     return false;
 }
 
-void PlacesSidebar::pinPlace(const QUrl &url)
+QStringList PlacesSidebar::availableSections() const
+{
+    return QStringList{kDefaultSection} + m_customSections;
+}
+
+void PlacesSidebar::pinPlace(const QUrl &url, const QString &section)
 {
     if (isPinned(url))
         return;
 
-    ensureBookmarksHeader();
     const QString name = url.fileName().isEmpty() ? url.toDisplayString(QUrl::PreferLocalFile) : url.fileName();
-    addPlace(name, QStringLiteral("folder"), url, true);
+    m_pinned.append({name, url, section});
     savePinned();
+    rebuildAll();
+}
+
+void PlacesSidebar::createSection()
+{
+    bool ok = false;
+    const QString name =
+        QInputDialog::getText(this, tr("New Section"), tr("Section name:"), QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok || name.isEmpty())
+        return;
+    if (name.compare(kPlacesHeader, Qt::CaseInsensitive) == 0 || name.compare(kDevicesHeader, Qt::CaseInsensitive) == 0
+        || name.compare(kDefaultSection, Qt::CaseInsensitive) == 0 || m_customSections.contains(name, Qt::CaseInsensitive))
+        return;
+
+    m_customSections.append(name);
+    saveCustomSections();
+    rebuildAll();
+}
+
+void PlacesSidebar::deleteSection(const QString &name)
+{
+    m_customSections.removeAll(name);
+    for (int i = m_pinned.size() - 1; i >= 0; --i) {
+        if (m_pinned[i].section == name)
+            m_pinned.removeAt(i);
+    }
+    saveCustomSections();
+    savePinned();
+    rebuildAll();
 }
 
 void PlacesSidebar::loadPinned()
 {
+    m_pinned.clear();
     QSettings settings;
     const int size = settings.beginReadArray(QStringLiteral("PinnedPlaces"));
     for (int i = 0; i < size; ++i) {
         settings.setArrayIndex(i);
         const QUrl url = settings.value(QStringLiteral("url")).toUrl();
         const QString name = settings.value(QStringLiteral("name")).toString();
-        if (url.isValid() && !isPinned(url)) {
-            ensureBookmarksHeader();
-            addPlace(name, QStringLiteral("folder"), url, true);
-        }
+        const QString section = settings.value(QStringLiteral("section"), kDefaultSection).toString();
+        if (url.isValid())
+            m_pinned.append({name, url, section});
     }
     settings.endArray();
 }
@@ -237,16 +250,25 @@ void PlacesSidebar::savePinned()
     QSettings settings;
     settings.remove(QStringLiteral("PinnedPlaces"));
     settings.beginWriteArray(QStringLiteral("PinnedPlaces"));
-    int idx = 0;
-    for (int i = 0; i < count(); ++i) {
-        QListWidgetItem *it = item(i);
-        if (!it->data(PinnedRole).toBool())
-            continue;
-        settings.setArrayIndex(idx++);
-        settings.setValue(QStringLiteral("url"), it->data(UrlRole).toUrl());
-        settings.setValue(QStringLiteral("name"), it->text());
+    for (int i = 0; i < m_pinned.size(); ++i) {
+        settings.setArrayIndex(i);
+        settings.setValue(QStringLiteral("url"), m_pinned[i].url);
+        settings.setValue(QStringLiteral("name"), m_pinned[i].name);
+        settings.setValue(QStringLiteral("section"), m_pinned[i].section);
     }
     settings.endArray();
+}
+
+void PlacesSidebar::loadCustomSections()
+{
+    QSettings settings;
+    m_customSections = settings.value(QStringLiteral("CustomSections")).toStringList();
+}
+
+void PlacesSidebar::saveCustomSections()
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("CustomSections"), m_customSections);
 }
 
 void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
@@ -255,24 +277,30 @@ void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
     QListWidgetItem *it = itemAt(pos);
 
     if (it && it->data(PinnedRole).toBool()) {
+        const QUrl url = it->data(UrlRole).toUrl();
         QAction *removeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove from Sidebar"));
-        connect(removeAction, &QAction::triggered, this, [this, it] {
-            delete it;
-            bool anyPinned = false;
-            for (int i = 0; i < count(); ++i) {
-                if (item(i)->data(PinnedRole).toBool()) {
-                    anyPinned = true;
+        connect(removeAction, &QAction::triggered, this, [this, url] {
+            for (int i = 0; i < m_pinned.size(); ++i) {
+                if (m_pinned[i].url == url) {
+                    m_pinned.removeAt(i);
                     break;
                 }
             }
-            if (!anyPinned && m_bookmarksHeader) {
-                delete m_bookmarksHeader;
-                m_bookmarksHeader = nullptr;
-            }
             savePinned();
+            rebuildAll();
         });
         menu.addSeparator();
+    } else if (it && it->data(HeaderRole).toBool()) {
+        const QString name = it->data(HeaderNameRole).toString();
+        if (m_customSections.contains(name)) {
+            QAction *deleteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-delete")), tr("Delete Section"));
+            connect(deleteAction, &QAction::triggered, this, [this, name] { deleteSection(name); });
+            menu.addSeparator();
+        }
     }
+
+    QAction *newSectionAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("Create New Section…"));
+    connect(newSectionAction, &QAction::triggered, this, &PlacesSidebar::createSection);
 
     QAction *refreshAction = menu.addAction(QIcon::fromTheme(QStringLiteral("view-refresh")), tr("Refresh Drives"));
     connect(refreshAction, &QAction::triggered, this, &PlacesSidebar::refreshDrives);
