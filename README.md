@@ -53,24 +53,59 @@ This installs the `minnow` binary, a `.desktop` file, an icon, and an AppStream 
 Packaging manifests/scripts live under `packaging/`, one subdirectory per format. All of them
 currently point at the `v0.1.0` tag as a placeholder — replace it once a real release tag exists.
 
-- **AUR** — maintained separately in the AUR itself, not in this repo.
-- **Flatpak** (`packaging/flatpak/net.minnow.Minnow.yaml`) — builds against `org.kde.Platform`.
-  Build locally with `flatpak-builder`:
-  ```sh
-  flatpak-builder --user --install build-dir packaging/flatpak/net.minnow.Minnow.yaml
-  ```
-  To publish on Flathub, submit this manifest (with a real tag) as a PR to
-  [flathub/flathub](https://github.com/flathub/flathub) following their submission process.
-- **Snap** (`packaging/snap/snapcraft.yaml`) — uses the `kde-neon` extension. Build with:
-  ```sh
-  cd packaging/snap && snapcraft
-  ```
-  Publish to the Snap Store with `snapcraft upload`. Note strict confinement means Minnow only
-  gets access to the home directory and removable media by default, not the whole filesystem.
-- **.deb** (`packaging/deb/`) — run `packaging/deb/build.sh` (needs `dpkg-dev`, `debhelper`).
-  Output goes to `dist/`.
-- **.rpm** (`packaging/rpm/`) — run `packaging/rpm/build.sh` (needs `rpm-build`). Output goes to
-  `dist/`.
+### Automated builds
+
+Pushing a tag matching `v*.*.*` triggers [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which builds a `.deb`, an `.rpm`, a Snap, a Flatpak bundle, an Arch Linux binary tarball, and a
+source tarball, then attaches all of them to that tag's GitHub Release. It can also be run
+manually against an existing tag from the Actions tab (`workflow_dispatch`).
+
+- Snap Store publishing only runs if a `SNAPCRAFT_STORE_CREDENTIALS` repo secret is set
+  (from `snapcraft export-login`); otherwise that step is skipped and only the built `.snap`
+  is attached to the release.
+- Flathub publishing isn't automated here — see below.
+- This workflow hasn't been exercised against a real tag yet, since no tag exists — treat the
+  first real release as the actual test of the pipeline.
+
+### AUR
+
+Two packages, under `packaging/aur/`:
+
+- **`minnow`** (`packaging/aur/minnow/`) — builds from the tagged source tarball.
+- **`minnow-bin`** (`packaging/aur/minnow-bin/`) — installs the prebuilt Arch binary tarball
+  that the release workflow attaches to each GitHub Release (built in an `archlinux:latest`
+  container, so it's ABI-compatible with a current Arch install).
+
+Both have a placeholder `sha256sums=('SKIP')` — run `updpkgsums` in each directory once a real
+tag exists, then push each directory's contents to its own AUR git repo
+(`ssh://aur@aur.archlinux.org/minnow.git` and `.../minnow-bin.git`) - the AUR itself is not
+this repository.
+
+### Flatpak
+
+`packaging/flatpak/net.minnow.Minnow.yaml` builds against `org.kde.Platform`. Build locally with
+`flatpak-builder`:
+```sh
+flatpak-builder --user --install build-dir packaging/flatpak/net.minnow.Minnow.yaml
+```
+To publish on Flathub, submit this manifest (with a real tag) as a PR to
+[flathub/flathub](https://github.com/flathub/flathub) following their submission process —
+this is Flathub's own review process, not something that can be automated from this repo.
+
+### Snap
+
+`packaging/snap/snapcraft.yaml` uses the `kde-neon` extension. Build with:
+```sh
+cd packaging/snap && snapcraft
+```
+Note strict confinement means Minnow only gets access to the home directory and removable
+media by default, not the whole filesystem.
+
+### .deb / .rpm
+
+Run `packaging/deb/build.sh` (needs `dpkg-dev`, `debhelper`) or `packaging/rpm/build.sh`
+(needs `rpm-build`) directly - output goes to `dist/`. The release workflow runs both of
+these too.
 
 ### apps.kde.org
 
