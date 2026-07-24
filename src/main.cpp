@@ -5,6 +5,7 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFileInfo>
+#include <QIcon>
 #include <QUrl>
 
 int main(int argc, char *argv[])
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Minnow"));
     app.setOrganizationName(QStringLiteral("minnow"));
     app.setApplicationVersion(QStringLiteral("0.1.0"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/minnow.svg")));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("A simple, KIO-based file browser for KDE."));

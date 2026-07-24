@@ -1,0 +1,51 @@
+name: minnow
+version: '0.1.0'
+summary: A simple, lightweight file manager for KDE
+description: |
+  Minnow is a small, KIO-based file browser built as a lighter alternative to Dolphin:
+  grid and list views, a customizable places sidebar, and standard file operations,
+  without the extra panels and configuration surface of a full-featured file manager.
+license: GPL-3.0-or-later
+confinement: strict
+grade: stable
+base: core22
+compression: lzo
+
+# NOTE: strict confinement + the `home`/`removable-media` plugs gives access to the user's
+# home directory and mounted removable media, but NOT arbitrary paths across the whole
+# filesystem the way Flatpak's --filesystem=host does. Browsing outside those areas (e.g.
+# /etc, other users' homes) will not work under Snap without also requesting
+# system-files/personal-files interfaces and getting them manually connected.
+apps:
+  minnow:
+    command: usr/bin/minnow
+    extensions: [kde-neon]
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - network
+
+parts:
+  minnow:
+    plugin: cmake
+    source: https://github.com/minnowfm/minnow.git
+    # PLACEHOLDER: no tags exist yet. Replace with a real release tag once this repository
+    # has been pushed to and tagged.
+    source-tag: 'v0.1.0'
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+    build-packages:
+      - extra-cmake-modules
+      - libkf6kio-dev
+      - libkf6coreaddons-dev
+      - libkf6configwidgets-dev
+      - libkf6widgetsaddons-dev
+      - qt6-base-dev
+    stage-packages:
+      - libkf6kiocore6
+      - libkf6kiowidgets6
+      - libkf6kiofilewidgets6
+      - libkf6kiogui6

@@ -48,6 +48,37 @@ cmake --install build --prefix /usr/local
 
 This installs the `minnow` binary, a `.desktop` file, an icon, and an AppStream metainfo file to the standard FHS locations (`bin`, `share/applications`, `share/icons/hicolor/scalable/apps`, `share/metainfo`).
 
+## Packaging
+
+Packaging manifests/scripts live under `packaging/`, one subdirectory per format. All of them
+currently point at the `v0.1.0` tag as a placeholder — replace it once a real release tag exists.
+
+- **AUR** — maintained separately in the AUR itself, not in this repo.
+- **Flatpak** (`packaging/flatpak/net.minnow.Minnow.yaml`) — builds against `org.kde.Platform`.
+  Build locally with `flatpak-builder`:
+  ```sh
+  flatpak-builder --user --install build-dir packaging/flatpak/net.minnow.Minnow.yaml
+  ```
+  To publish on Flathub, submit this manifest (with a real tag) as a PR to
+  [flathub/flathub](https://github.com/flathub/flathub) following their submission process.
+- **Snap** (`packaging/snap/snapcraft.yaml`) — uses the `kde-neon` extension. Build with:
+  ```sh
+  cd packaging/snap && snapcraft
+  ```
+  Publish to the Snap Store with `snapcraft upload`. Note strict confinement means Minnow only
+  gets access to the home directory and removable media by default, not the whole filesystem.
+- **.deb** (`packaging/deb/`) — run `packaging/deb/build.sh` (needs `dpkg-dev`, `debhelper`).
+  Output goes to `dist/`.
+- **.rpm** (`packaging/rpm/`) — run `packaging/rpm/build.sh` (needs `rpm-build`). Output goes to
+  `dist/`.
+
+### apps.kde.org
+
+There's no separate manual submission step for apps.kde.org — its catalog is generated from
+AppStream metadata (`data/net.minnow.Minnow.metainfo.xml`) for apps that are discoverable
+through Flathub or distro repos. Getting Minnow onto Flathub (see above) with valid metainfo
+is what makes it eligible to be picked up there.
+
 ## Testing
 
 Automated tests cover the pure path-computation logic (folder navigation, rename/mkdir destination paths) via QTest:
@@ -66,11 +97,12 @@ src/                  Application source
   FileOperations.*     KIO job wrappers (copy/move/trash/rename/mkdir), undo recording
   PathUtils.*          Pure URL/path helpers, shared and unit-tested
 tests/                 QTest unit tests
-data/                  Packaging: .desktop file, icon, AppStream metainfo
+data/                  .desktop file, icon, AppStream metainfo
+packaging/             Flatpak manifest, Snap manifest, .deb/.rpm build scripts
 ```
 
 ## Known limitations
 
-- No thumbnailing, drag-and-drop, or service menus yet
+- No thumbnailing or service menus yet
 - No multi-window support
 - Window corners aren't rounded - Qt can't round a native top-level window without going frameless, which would drop KDE's native titlebar and controls

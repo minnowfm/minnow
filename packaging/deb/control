@@ -1,0 +1,24 @@
+Source: minnow
+Section: utils
+Priority: optional
+Maintainer: Minnow Contributors <noreply@example.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake,
+               extra-cmake-modules,
+               qt6-base-dev,
+               libkf6coreaddons-dev,
+               libkf6configwidgets-dev,
+               libkf6widgetsaddons-dev,
+               libkf6kio-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/minnowfm/minnow
+Rules-Requires-Root: no
+
+Package: minnow
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: A simple, lightweight file manager for KDE
+ Minnow is a small, KIO-based file browser built as a lighter alternative
+ to Dolphin: grid and list views, a customizable places sidebar, and
+ standard file operations, without the extra panels and configuration
+ surface of a full-featured file manager.

@@ -1,11 +1,16 @@
 #include "PlacesSidebar.h"
+#include "FileOperations.h"
 
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFont>
 #include <QIcon>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
@@ -46,6 +51,8 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     setSpacing(2);
     setUniformItemSizes(false);
     setContextMenuPolicy(Qt::CustomContextMenu);
+    setAcceptDrops(true);
+    setDragDropMode(QAbstractItemView::DropOnly);
 
     m_fixedPlaces = {
         {tr("Home"), QStringLiteral("user-home"),
@@ -329,4 +336,47 @@ void PlacesSidebar::setCurrentUrl(const QUrl &url)
     }
     clearSelection();
     setCurrentRow(-1);
+}
+
+void PlacesSidebar::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls())
+        event->acceptProposedAction();
+    else
+        event->ignore();
+}
+
+void PlacesSidebar::dragMoveEvent(QDragMoveEvent *event)
+{
+    if (!event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
+    }
+    QListWidgetItem *hovered = itemAt(event->position().toPoint());
+    const QUrl destUrl = hovered ? hovered->data(UrlRole).toUrl() : QUrl();
+    if (hovered && !hovered->data(HeaderRole).toBool() && destUrl.isValid())
+        event->acceptProposedAction();
+    else
+        event->ignore();
+}
+
+void PlacesSidebar::dropEvent(QDropEvent *event)
+{
+    if (!event->mimeData()->hasUrls()) {
+        event->ignore();
+        return;
+    }
+    QListWidgetItem *hovered = itemAt(event->position().toPoint());
+    const QUrl destDir = hovered ? hovered->data(UrlRole).toUrl() : QUrl();
+    if (!hovered || hovered->data(HeaderRole).toBool() || !destDir.isValid()) {
+        event->ignore();
+        return;
+    }
+
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (event->proposedAction() == Qt::MoveAction)
+        FileOperations::moveTo(urls, destDir, this);
+    else
+        FileOperations::copyTo(urls, destDir, this);
+    event->acceptProposedAction();
 }

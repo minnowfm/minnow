@@ -1,22 +1,19 @@
 #pragma once
 
-#include <QHash>
 #include <QMainWindow>
 #include <QUrl>
-#include <QVector>
 
 class QToolButton;
 class QLineEdit;
-class QStackedWidget;
-class QListView;
-class QTreeView;
 class QLabel;
-class QAbstractItemView;
+class QFrame;
+class QCloseEvent;
+class QStackedWidget;
 class QVBoxLayout;
-class KDirLister;
-class KDirModel;
-class KDirSortFilterProxyModel;
+class QHBoxLayout;
 class PlacesSidebar;
+class BrowserTab;
+class TabBar;
 
 class MainWindow : public QMainWindow
 {
@@ -25,68 +22,49 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(const QUrl &startUrl = QUrl(), QWidget *parent = nullptr);
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private Q_SLOTS:
-    void navigateTo(const QUrl &url, bool addToHistory = true);
+    void onTabUrlChanged(const QUrl &url);
+    void onTabHistoryChanged();
+    void onTabStatusChanged();
+    void onTabTitleChanged();
+    void onCurrentTabChanged(int index);
+    void onFilterTextChanged(const QString &text);
     void goBack();
     void goForward();
     void goUp();
-    void onAddressBarSubmitted();
-    void onItemActivated(const QModelIndex &proxyIndex);
-    void showViewContextMenu(const QPoint &pos);
-    void switchToGridView();
-    void switchToListView();
-    void updateStatusBar();
-    void onFilterTextChanged(const QString &text);
-    void setIconSize(int size);
-    void onSortIndicatorChanged(int column, Qt::SortOrder order);
+    void openNewWindow(const QUrl &url);
 
 private:
     void setupToolBar();
     void setupSidebar();
-    void setupViews();
+    void setupTabs();
     void setupStatusBar();
+    void setupShortcuts();
     void applyStyle();
-    QList<QUrl> selectedUrls() const;
-    QAbstractItemView *currentView() const;
-    void applySortForCurrentFolder();
-    void applyViewModeForCurrentFolder();
-    void setFolderIsGrid(bool isGrid);
+    BrowserTab *currentTab() const;
+    BrowserTab *addNewTab(const QUrl &url, bool activate = true);
+    void closeTab(int index);
+    void updateChromeForCurrentTab();
+    void updateContentCardCorners();
 
     QToolButton *m_backButton = nullptr;
     QToolButton *m_forwardButton = nullptr;
     QToolButton *m_upButton = nullptr;
-    QLineEdit *m_addressBar = nullptr;
     QLineEdit *m_filterEdit = nullptr;
+    QWidget *m_navigatorHost = nullptr;
+    QHBoxLayout *m_navigatorHostLayout = nullptr;
 
     PlacesSidebar *m_sidebar = nullptr;
-    QStackedWidget *m_viewStack = nullptr;
-    QListView *m_gridView = nullptr;
-    QTreeView *m_listView = nullptr;
+    TabBar *m_tabBar = nullptr;
+    QStackedWidget *m_tabStack = nullptr;
+    QFrame *m_contentCard = nullptr;
     QVBoxLayout *m_cardLayout = nullptr;
-
-    KDirLister *m_dirLister = nullptr;
-    KDirModel *m_dirModel = nullptr;
-    KDirSortFilterProxyModel *m_proxyModel = nullptr;
 
     QLabel *m_itemCountLabel = nullptr;
     QLabel *m_freeSpaceLabel = nullptr;
 
-    QVector<QUrl> m_history;
-    int m_historyIndex = -1;
-    QUrl m_currentUrl;
     QUrl m_startUrl;
-
-    struct FolderSort {
-        int column = 0;
-        Qt::SortOrder order = Qt::AscendingOrder;
-    };
-    QHash<QString, FolderSort> m_folderSort;
-    bool m_restoringSort = false;
-
-    QHash<QString, bool> m_folderIsGrid;
-
-    void loadFolderSort();
-    void saveFolderSort(const QString &folderKey, int column, Qt::SortOrder order);
-    void loadFolderViewModes();
-    void saveFolderViewModes();
 };

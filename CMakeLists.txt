@@ -40,6 +40,13 @@ add_executable(minnow
     src/MainWindow.h
     src/PlacesSidebar.cpp
     src/PlacesSidebar.h
+    src/BrowserTab.cpp
+    src/BrowserTab.h
+    src/PathBar.cpp
+    src/PathBar.h
+    src/TabBar.cpp
+    src/TabBar.h
+    src/resources.qrc
 )
 
 target_link_libraries(minnow PRIVATE minnow_core)

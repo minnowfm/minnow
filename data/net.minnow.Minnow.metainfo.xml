@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  License and homepage are not set: this project has no chosen license
-  or public repository yet. Fill in <project_license> and <url type="homepage">
-  before publishing this metainfo file anywhere (e.g. a software center).
--->
 <component type="desktop-application">
   <id>net.minnow.Minnow</id>
   <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
   <name>Minnow</name>
   <summary>A simple, lightweight file manager for KDE</summary>
   <description>
@@ -21,5 +17,20 @@
   <provides>
     <binary>minnow</binary>
   </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Minnow in dark mode</caption>
+      <image>https://raw.githubusercontent.com/minnowfm/minnow/main/docs/screenshot-dark.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Minnow in light mode</caption>
+      <image>https://raw.githubusercontent.com/minnowfm/minnow/main/docs/screenshot-light.png</image>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://github.com/minnowfm/minnow</url>
+  <url type="bugtracker">https://github.com/minnowfm/minnow/issues</url>
   <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-24"/>
+  </releases>
 </component>
