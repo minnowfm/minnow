@@ -445,6 +445,7 @@ void MainWindow::saveFolderSort(const QString &folderKey, int column, Qt::SortOr
     m_folderSort[folderKey] = FolderSort{column, order};
 
     QSettings settings;
+    settings.remove(QStringLiteral("FolderSort"));
     settings.beginWriteArray(QStringLiteral("FolderSort"));
     int idx = 0;
     for (auto it = m_folderSort.constBegin(); it != m_folderSort.constEnd(); ++it) {

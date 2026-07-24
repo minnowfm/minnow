@@ -1,6 +1,5 @@
 #include "PlacesSidebar.h"
 
-#include <QFileInfo>
 #include <QIcon>
 #include <QMenu>
 #include <QSettings>
@@ -22,16 +21,19 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     setUniformItemSizes(true);
     setContextMenuPolicy(Qt::CustomContextMenu);
 
-    addPlace(tr("Home"), QStringLiteral("user-home"),
-             QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)));
-    addPlace(tr("Documents"), QStringLiteral("folder-documents"),
-             QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)));
-    addPlace(tr("Downloads"), QStringLiteral("folder-download"),
-             QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)));
-    addPlace(tr("Pictures"), QStringLiteral("folder-pictures"),
-             QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)));
-    addPlace(tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")));
+    m_fixedPlaces = {
+        {tr("Home"), QStringLiteral("user-home"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)), QStringLiteral("Home")},
+        {tr("Documents"), QStringLiteral("folder-documents"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)), QStringLiteral("Documents")},
+        {tr("Downloads"), QStringLiteral("folder-download"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)), QStringLiteral("Downloads")},
+        {tr("Pictures"), QStringLiteral("folder-pictures"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)), QStringLiteral("Pictures")},
+        {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
+    };
 
+    rebuildFixedPlaces();
     loadPinned();
 
     connect(this, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
@@ -63,11 +65,44 @@ void PlacesSidebar::ensureSeparator()
     addItem(m_separator);
 }
 
+bool PlacesSidebar::isFixedPlaceVisible(const QString &settingsKey) const
+{
+    QSettings settings;
+    return settings.value(QStringLiteral("Places/%1").arg(settingsKey), true).toBool();
+}
+
+void PlacesSidebar::setFixedPlaceVisible(const QString &settingsKey, bool visible)
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("Places/%1").arg(settingsKey), visible);
+    rebuildFixedPlaces();
+}
+
+void PlacesSidebar::rebuildFixedPlaces()
+{
+    for (int i = count() - 1; i >= 0; --i) {
+        QListWidgetItem *it = item(i);
+        if (it == m_separator || it->data(PinnedRole).toBool())
+            continue;
+        delete it;
+    }
+
+    int insertPos = 0;
+    for (const auto &place : m_fixedPlaces) {
+        if (!isFixedPlaceVisible(place.settingsKey))
+            continue;
+        auto *item = new QListWidgetItem(QIcon::fromTheme(place.iconName), place.label);
+        item->setData(UrlRole, place.url);
+        item->setData(PinnedRole, false);
+        insertItem(insertPos++, item);
+    }
+}
+
 bool PlacesSidebar::isPinned(const QUrl &url) const
 {
     for (int i = 0; i < count(); ++i) {
         if (item(i)->data(UrlRole).toUrl() == url)
-            return item(i)->data(PinnedRole).toBool();
+            return true;
     }
     return false;
 }
@@ -91,7 +126,7 @@ void PlacesSidebar::loadPinned()
         settings.setArrayIndex(i);
         const QUrl url = settings.value(QStringLiteral("url")).toUrl();
         const QString name = settings.value(QStringLiteral("name")).toString();
-        if (url.isValid()) {
+        if (url.isValid() && !isPinned(url)) {
             ensureSeparator();
             addPlace(name, QStringLiteral("folder"), url, true);
         }
@@ -102,6 +137,7 @@ void PlacesSidebar::loadPinned()
 void PlacesSidebar::savePinned()
 {
     QSettings settings;
+    settings.remove(QStringLiteral("PinnedPlaces"));
     settings.beginWriteArray(QStringLiteral("PinnedPlaces"));
     int idx = 0;
     for (int i = 0; i < count(); ++i) {
@@ -117,27 +153,40 @@ void PlacesSidebar::savePinned()
 
 void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
 {
-    QListWidgetItem *it = itemAt(pos);
-    if (!it || !it->data(PinnedRole).toBool())
-        return;
-
     QMenu menu(this);
-    QAction *removeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove from Sidebar"));
-    connect(removeAction, &QAction::triggered, this, [this, it] {
-        delete it;
-        bool anyPinned = false;
-        for (int i = 0; i < count(); ++i) {
-            if (item(i)->data(PinnedRole).toBool()) {
-                anyPinned = true;
-                break;
+    QListWidgetItem *it = itemAt(pos);
+
+    if (it && it->data(PinnedRole).toBool()) {
+        QAction *removeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove from Sidebar"));
+        connect(removeAction, &QAction::triggered, this, [this, it] {
+            delete it;
+            bool anyPinned = false;
+            for (int i = 0; i < count(); ++i) {
+                if (item(i)->data(PinnedRole).toBool()) {
+                    anyPinned = true;
+                    break;
+                }
             }
-        }
-        if (!anyPinned && m_separator) {
-            delete m_separator;
-            m_separator = nullptr;
-        }
-        savePinned();
-    });
+            if (!anyPinned && m_separator) {
+                delete m_separator;
+                m_separator = nullptr;
+            }
+            savePinned();
+        });
+        menu.addSeparator();
+    }
+
+    QMenu *placesMenu = menu.addMenu(tr("Show in Sidebar"));
+    for (const auto &place : m_fixedPlaces) {
+        QAction *act = placesMenu->addAction(place.label);
+        act->setCheckable(true);
+        act->setChecked(isFixedPlaceVisible(place.settingsKey));
+        const QString key = place.settingsKey;
+        connect(act, &QAction::triggered, this, [this, key](bool checked) {
+            setFixedPlaceVisible(key, checked);
+        });
+    }
+
     menu.exec(viewport()->mapToGlobal(pos));
 }
 
