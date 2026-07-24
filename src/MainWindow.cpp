@@ -17,6 +17,7 @@
 #include <QLineEdit>
 #include <QSettings>
 #include <QShortcut>
+#include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStackedWidget>
 #include <QStorageInfo>
@@ -199,6 +200,9 @@ void MainWindow::onCurrentTabChanged(int index)
         PathBar *nav = tab->pathBar();
         m_navigatorHostLayout->addWidget(nav);
         nav->show();
+
+        const QSignalBlocker blocker(m_filterEdit);
+        m_filterEdit->setText(tab->filterText());
     }
 
     updateChromeForCurrentTab();
@@ -311,17 +315,23 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::setupShortcuts()
 {
-    KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
-
+    // Scoped to this window (not ApplicationShortcut) so that with multiple windows open,
+    // each one's shortcut fires unambiguously instead of Qt refusing to disambiguate two
+    // identical app-wide shortcuts. uiInterface()->setParentWidget() is likewise called
+    // right before each undo()/redo() - KIO::FileUndoManager is a single global instance
+    // shared by every window, so its UI parent has to be (re-)pointed at whichever window
+    // actually triggered the action, not fixed once at construction time.
     auto *undoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Z), this);
-    undoShortcut->setContext(Qt::ApplicationShortcut);
-    connect(undoShortcut, &QShortcut::activated, this, [] {
+    undoShortcut->setContext(Qt::WindowShortcut);
+    connect(undoShortcut, &QShortcut::activated, this, [this] {
+        KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
         KIO::FileUndoManager::self()->undo();
     });
 
     auto *redoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z), this);
-    redoShortcut->setContext(Qt::ApplicationShortcut);
-    connect(redoShortcut, &QShortcut::activated, this, [] {
+    redoShortcut->setContext(Qt::WindowShortcut);
+    connect(redoShortcut, &QShortcut::activated, this, [this] {
+        KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
         KIO::FileUndoManager::self()->redo();
     });
 

@@ -435,6 +435,7 @@ void BrowserTab::saveFolderViewModes()
 
 void BrowserTab::setFilterText(const QString &text)
 {
+    m_filterText = text;
     m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
     m_proxyModel->setFilterFixedString(text);
     Q_EMIT statusChanged();

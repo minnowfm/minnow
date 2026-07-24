@@ -41,6 +41,7 @@ public:
     void switchToListView();
     void setIconSize(int size);
     void setFilterText(const QString &text);
+    QString filterText() const { return m_filterText; }
     QString displayName() const;
     void activateCurrentItem();
     int itemCount() const;
@@ -86,6 +87,7 @@ private:
     QUrl m_currentUrl;
     QList<QUrl> m_history;
     int m_historyIndex = -1;
+    QString m_filterText;
 
     struct FolderSort {
         int column = 0;

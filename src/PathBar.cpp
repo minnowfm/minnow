@@ -61,6 +61,7 @@ void PathBar::rebuildSegments()
             font.setBold(true);
             button->setFont(font);
         }
+        button->setProperty("segmentUrl", target);
         connect(button, &QToolButton::clicked, this, [this, target] { Q_EMIT urlActivated(target); });
         m_breadcrumbLayout->addWidget(button);
         return button;
@@ -148,6 +149,14 @@ void PathBar::dropEvent(QDropEvent *event)
         event->ignore();
         return;
     }
-    Q_EMIT urlsDropped(m_url, event);
+
+    QUrl destination = m_url;
+    if (QWidget *hovered = childAt(event->position().toPoint())) {
+        const QVariant segmentUrl = hovered->property("segmentUrl");
+        if (segmentUrl.isValid())
+            destination = segmentUrl.toUrl();
+    }
+
+    Q_EMIT urlsDropped(destination, event);
     event->acceptProposedAction();
 }
