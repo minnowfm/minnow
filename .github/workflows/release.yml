@@ -140,6 +140,10 @@ jobs:
   create-release:
     needs: [build-arch-binary, build-deb, build-rpm, build-snap, build-flatpak]
     runs-on: ubuntu-24.04
+    # The default GITHUB_TOKEN is read-only unless explicitly granted write access here -
+    # this avoids needing to change the repo-wide Actions token permission default.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Create source tarball
