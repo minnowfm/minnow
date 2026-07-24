@@ -1,14 +1,32 @@
 #include "PlacesSidebar.h"
 
+#include <QDir>
 #include <QIcon>
 #include <QMenu>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QStorageInfo>
 
 namespace
 {
 constexpr int PinnedRole = Qt::UserRole + 1;
 constexpr int UrlRole = Qt::UserRole;
+constexpr int DriveRole = Qt::UserRole + 2;
+
+bool isRealVolume(const QStorageInfo &info)
+{
+    static const QSet<QByteArray> pseudoFileSystems = {
+        "tmpfs",   "devtmpfs",     "proc",    "sysfs",     "cgroup", "cgroup2",     "overlay",
+        "squashfs", "devpts",      "debugfs", "tracefs",   "pstore", "bpf",         "mqueue",
+        "hugetlbfs", "securityfs", "autofs",  "binfmt_misc", "configfs", "fusectl", "efivarfs",
+    };
+    if (!info.isValid() || !info.isReady())
+        return false;
+    if (pseudoFileSystems.contains(info.fileSystemType()))
+        return false;
+    return true;
+}
 }
 
 PlacesSidebar::PlacesSidebar(QWidget *parent)
@@ -30,11 +48,16 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
          QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)), QStringLiteral("Downloads")},
         {tr("Pictures"), QStringLiteral("folder-pictures"),
          QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)), QStringLiteral("Pictures")},
+        {tr("Music"), QStringLiteral("folder-music"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::MusicLocation)), QStringLiteral("Music")},
+        {tr("Videos"), QStringLiteral("folder-videos"),
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::MoviesLocation)), QStringLiteral("Videos")},
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
     rebuildFixedPlaces();
     loadPinned();
+    refreshDrives();
 
     connect(this, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
         const QUrl url = item->data(UrlRole).toUrl();
@@ -65,6 +88,16 @@ void PlacesSidebar::ensureSeparator()
     addItem(m_separator);
 }
 
+void PlacesSidebar::ensureDrivesSeparator()
+{
+    if (m_drivesSeparator)
+        return;
+    m_drivesSeparator = new QListWidgetItem();
+    m_drivesSeparator->setFlags(Qt::NoItemFlags);
+    m_drivesSeparator->setSizeHint(QSize(1, 9));
+    addItem(m_drivesSeparator);
+}
+
 bool PlacesSidebar::isFixedPlaceVisible(const QString &settingsKey) const
 {
     QSettings settings;
@@ -82,7 +115,9 @@ void PlacesSidebar::rebuildFixedPlaces()
 {
     for (int i = count() - 1; i >= 0; --i) {
         QListWidgetItem *it = item(i);
-        if (it == m_separator || it->data(PinnedRole).toBool())
+        if (it == m_separator || it == m_drivesSeparator)
+            continue;
+        if (it->data(PinnedRole).toBool() || it->data(DriveRole).toBool())
             continue;
         delete it;
     }
@@ -95,6 +130,48 @@ void PlacesSidebar::rebuildFixedPlaces()
         item->setData(UrlRole, place.url);
         item->setData(PinnedRole, false);
         insertItem(insertPos++, item);
+    }
+}
+
+void PlacesSidebar::refreshDrives()
+{
+    for (int i = count() - 1; i >= 0; --i) {
+        QListWidgetItem *it = item(i);
+        if (it->data(DriveRole).toBool())
+            delete it;
+    }
+    if (m_drivesSeparator) {
+        delete m_drivesSeparator;
+        m_drivesSeparator = nullptr;
+    }
+
+    const QString homePath = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)).canonicalPath();
+    QVector<QStorageInfo> drives;
+    for (const QStorageInfo &info : QStorageInfo::mountedVolumes()) {
+        if (!isRealVolume(info))
+            continue;
+        const QString rootPath = info.rootPath();
+        if (rootPath == QStringLiteral("/") || rootPath == homePath)
+            continue;
+        drives << info;
+    }
+
+    if (drives.isEmpty())
+        return;
+
+    ensureDrivesSeparator();
+    for (const QStorageInfo &info : drives) {
+        QString label = info.name();
+        if (label.isEmpty())
+            label = QDir(info.rootPath()).dirName();
+        if (label.isEmpty())
+            label = info.rootPath();
+
+        auto *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("drive-harddisk")), label);
+        item->setData(UrlRole, QUrl::fromLocalFile(info.rootPath()));
+        item->setData(PinnedRole, false);
+        item->setData(DriveRole, true);
+        addItem(item);
     }
 }
 
@@ -175,6 +252,9 @@ void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
         });
         menu.addSeparator();
     }
+
+    QAction *refreshAction = menu.addAction(QIcon::fromTheme(QStringLiteral("view-refresh")), tr("Refresh Drives"));
+    connect(refreshAction, &QAction::triggered, this, &PlacesSidebar::refreshDrives);
 
     QMenu *placesMenu = menu.addMenu(tr("Show in Sidebar"));
     for (const auto &place : m_fixedPlaces) {
