@@ -1,4 +1,4 @@
-id: net.minnow.Minnow
+id: io.github.minnowfm.Minnow
 runtime: org.kde.Platform
 runtime-version: '6.7'
 sdk: org.kde.Sdk
@@ -26,6 +26,4 @@ modules:
     sources:
       - type: git
         url: https://github.com/minnowfm/minnow
-        # PLACEHOLDER: no tags exist yet. Replace with a real release tag (or commit) once
-        # this repository has been pushed to and tagged.
         tag: v0.1.0

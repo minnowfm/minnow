@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>net.minnow.Minnow</id>
+  <id>io.github.minnowfm.Minnow</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Minnow</name>
@@ -13,7 +13,7 @@
       surface of a full-featured file manager.
     </p>
   </description>
-  <launchable type="desktop-id">minnow.desktop</launchable>
+  <launchable type="desktop-id">io.github.minnowfm.Minnow.desktop</launchable>
   <provides>
     <binary>minnow</binary>
   </provides>

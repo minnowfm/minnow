@@ -134,7 +134,7 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: minnow.flatpak
-          manifest-path: packaging/flatpak/net.minnow.Minnow.yaml
+          manifest-path: packaging/flatpak/io.github.minnowfm.Minnow.yaml
           cache-key: flatpak-builder-${{ github.sha }}
 
   create-release:

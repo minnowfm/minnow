@@ -34,9 +34,9 @@ surface of a full-featured file manager.
 
 %files
 %{_bindir}/minnow
-%{_datadir}/applications/minnow.desktop
-%{_datadir}/icons/hicolor/scalable/apps/minnow.svg
-%{_datadir}/metainfo/net.minnow.Minnow.metainfo.xml
+%{_datadir}/applications/io.github.minnowfm.Minnow.desktop
+%{_datadir}/icons/hicolor/scalable/apps/io.github.minnowfm.Minnow.svg
+%{_datadir}/metainfo/io.github.minnowfm.Minnow.metainfo.xml
 
 %changelog
 * Fri Jul 24 2026 Minnow Contributors <noreply@example.com> - 0.1.0-1

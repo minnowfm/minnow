@@ -59,9 +59,9 @@ if(KF6KIO_VERSION VERSION_GREATER_EQUAL 6.17.0)
 endif()
 
 install(TARGETS minnow DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES data/minnow.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES data/net.minnow.Minnow.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
-install(FILES data/icons/minnow.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES data/io.github.minnowfm.Minnow.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES data/io.github.minnowfm.Minnow.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+install(FILES data/icons/io.github.minnowfm.Minnow.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 
 option(BUILD_TESTING "Build automated tests" ON)
 if(BUILD_TESTING)

@@ -83,10 +83,10 @@ this repository.
 
 ### Flatpak
 
-`packaging/flatpak/net.minnow.Minnow.yaml` builds against `org.kde.Platform`. Build locally with
+`packaging/flatpak/io.github.minnowfm.Minnow.yaml` builds against `org.kde.Platform`. Build locally with
 `flatpak-builder`:
 ```sh
-flatpak-builder --user --install build-dir packaging/flatpak/net.minnow.Minnow.yaml
+flatpak-builder --user --install build-dir packaging/flatpak/io.github.minnowfm.Minnow.yaml
 ```
 To publish on Flathub, submit this manifest (with a real tag) as a PR to
 [flathub/flathub](https://github.com/flathub/flathub) following their submission process —
@@ -110,7 +110,7 @@ these too.
 ### apps.kde.org
 
 There's no separate manual submission step for apps.kde.org — its catalog is generated from
-AppStream metadata (`data/net.minnow.Minnow.metainfo.xml`) for apps that are discoverable
+AppStream metadata (`data/io.github.minnowfm.Minnow.metainfo.xml`) for apps that are discoverable
 through Flathub or distro repos. Getting Minnow onto Flathub (see above) with valid metainfo
 is what makes it eligible to be picked up there.
 

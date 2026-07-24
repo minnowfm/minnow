@@ -1,5 +1,5 @@
 <RCC>
     <qresource prefix="/">
-        <file alias="icons/minnow.svg">../data/icons/minnow.svg</file>
+        <file alias="icons/minnow.svg">../data/icons/io.github.minnowfm.Minnow.svg</file>
     </qresource>
 </RCC>
