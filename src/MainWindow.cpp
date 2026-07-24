@@ -6,7 +6,9 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QColor>
 #include <QDir>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -23,6 +25,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeView>
+#include <QVBoxLayout>
 
 #include <KDirLister>
 #include <KDirModel>
@@ -62,10 +65,17 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *central = new QWidget(this);
     auto *layout = new QHBoxLayout(central);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
+    layout->setContentsMargins(0, 8, 8, 8);
+    layout->setSpacing(8);
     layout->addWidget(m_sidebar);
-    layout->addWidget(m_viewStack, 1);
+
+    auto *contentCard = new QFrame(this);
+    contentCard->setObjectName(QStringLiteral("contentCard"));
+    auto *cardLayout = new QVBoxLayout(contentCard);
+    cardLayout->setContentsMargins(6, 6, 6, 6);
+    cardLayout->addWidget(m_viewStack);
+    layout->addWidget(contentCard, 1);
+
     setCentralWidget(central);
 
     navigateTo(QUrl::fromLocalFile(QDir::homePath()));
@@ -275,17 +285,35 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::applyStyle()
 {
+    const QColor windowColor = palette().color(QPalette::Window);
+    const bool dark = windowColor.lightness() < 128;
+    const QColor cardColor = dark ? windowColor.lighter(125) : windowColor.lighter(106);
+    const QColor borderColor = dark ? windowColor.lighter(150) : windowColor.darker(112);
+
     setStyleSheet(
-        QStringLiteral("QLineEdit { border-radius: 10px; padding: 4px 10px; }"
+        QStringLiteral("QMainWindow { background: palette(window); }"
+                        "QToolBar { background: palette(window); border: none; spacing: 4px; padding: 4px; }"
+                        "PlacesSidebar { background: palette(window); border: none; }"
+                        "QFrame#contentCard { background: %1; border: 1px solid %2; border-radius: 14px; }"
+                        "QLineEdit { border-radius: 10px; padding: 4px 10px; }"
                         "QToolButton { border-radius: 8px; padding: 4px; }"
                         "QListWidget::item { border-radius: 10px; padding: 5px 8px; margin: 1px 4px; }"
                         "QListWidget::item:selected { border-radius: 10px; }"
-                        "QListView { border: none; }"
+                        "QListView { border: none; background: transparent; }"
                         "QListView::item { border-radius: 12px; padding: 6px; }"
                         "QListView::item:selected, QListView::item:hover { border-radius: 12px; }"
-                        "QTreeView { border: none; }"
+                        "QTreeView { border: none; background: transparent; }"
                         "QTreeView::item { border-radius: 10px; }"
-                        "QTreeView::item:selected, QTreeView::item:hover { border-radius: 10px; }"));
+                        "QTreeView::item:selected, QTreeView::item:hover { border-radius: 10px; }"
+                        "QScrollBar:vertical { background: transparent; width: 10px; margin: 0px; }"
+                        "QScrollBar::handle:vertical { background: palette(mid); border-radius: 5px; min-height: 24px; }"
+                        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: none; border: none; }"
+                        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }"
+                        "QScrollBar:horizontal { background: transparent; height: 10px; margin: 0px; }"
+                        "QScrollBar::handle:horizontal { background: palette(mid); border-radius: 5px; min-width: 24px; }"
+                        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: none; border: none; }"
+                        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }")
+            .arg(cardColor.name(), borderColor.name()));
 }
 
 QAbstractItemView *MainWindow::currentView() const
