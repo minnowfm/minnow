@@ -8,7 +8,7 @@ description: |
 license: GPL-3.0-or-later
 confinement: strict
 grade: stable
-base: core22
+base: core24
 compression: lzo
 
 # NOTE: strict confinement + the `home`/`removable-media` plugs gives access to the user's
@@ -37,15 +37,8 @@ parts:
       - -DCMAKE_INSTALL_PREFIX=/usr
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_TESTING=OFF
+    # The kde-neon extension (on the app, above) pulls in the KDE Platform/SDK content
+    # snaps, which provide Qt6 and KF6 headers/libraries at build and run time - no need
+    # to list libkf6*-dev packages here, and their exact apt names vary across bases anyway.
     build-packages:
       - extra-cmake-modules
-      - libkf6kio-dev
-      - libkf6coreaddons-dev
-      - libkf6configwidgets-dev
-      - libkf6widgetsaddons-dev
-      - qt6-base-dev
-    stage-packages:
-      - libkf6kiocore6
-      - libkf6kiowidgets6
-      - libkf6kiofilewidgets6
-      - libkf6kiogui6

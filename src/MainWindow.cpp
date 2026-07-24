@@ -328,12 +328,14 @@ void MainWindow::setupShortcuts()
         KIO::FileUndoManager::self()->undo();
     });
 
+#ifdef MINNOW_HAVE_KIO_REDO
     auto *redoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z), this);
     redoShortcut->setContext(Qt::WindowShortcut);
     connect(redoShortcut, &QShortcut::activated, this, [this] {
         KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
         KIO::FileUndoManager::self()->redo();
     });
+#endif
 
     auto *newTabShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_T), this);
     newTabShortcut->setContext(Qt::WindowShortcut);

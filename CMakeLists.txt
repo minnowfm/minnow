@@ -51,6 +51,13 @@ add_executable(minnow
 
 target_link_libraries(minnow PRIVATE minnow_core)
 
+# KIO::FileUndoManager::redo() only exists since KF6 6.17 - older KF6 (still common on e.g.
+# Fedora 40's default repos) only has undo(). Gate the Redo shortcut on it instead of hard
+# requiring a KIO version newer than most distros currently ship.
+if(KF6KIO_VERSION VERSION_GREATER_EQUAL 6.17.0)
+    target_compile_definitions(minnow PRIVATE MINNOW_HAVE_KIO_REDO)
+endif()
+
 install(TARGETS minnow DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/minnow.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES data/net.minnow.Minnow.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
