@@ -135,6 +135,10 @@ void openUrl(const QUrl &url, QWidget *parent)
 {
     auto *job = new KIO::OpenUrlJob(url);
     job->setUiDelegate(KIO::createDefaultJobUiDelegate(KJobUiDelegate::AutoErrorHandlingEnabled, parent));
+    // Off by default (KIO assumes non-file-manager callers like browsers/mail clients) -
+    // this is what makes double-clicking an executable prompt "run or open as text?"
+    // (Dolphin's behavior) instead of just failing with no associated application.
+    job->setShowOpenOrExecuteDialog(true);
     job->start();
 }
 
