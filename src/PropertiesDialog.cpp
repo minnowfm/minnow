@@ -486,8 +486,10 @@ QWidget *PropertiesDialog::buildMediaPane()
     static const QList<KFileMetaData::Property::Property> kOrder = {
         KFileMetaData::Property::Title,
         KFileMetaData::Property::Duration,
+#ifdef MINNOW_HAVE_KFILEMETADATA_CODEC_PROPS
         KFileMetaData::Property::VideoCodec,
         KFileMetaData::Property::AudioCodec,
+#endif
         KFileMetaData::Property::FrameRate,
         KFileMetaData::Property::AspectRatio,
         KFileMetaData::Property::BitRate,
@@ -518,8 +520,10 @@ QWidget *PropertiesDialog::buildMediaPane()
         KFileMetaData::Property::PhotoGpsLongitude,
         KFileMetaData::Property::PhotoGpsAltitude,
         KFileMetaData::Property::ImageOrientation,
+#ifdef MINNOW_HAVE_KFILEMETADATA_CODEC_PROPS
         KFileMetaData::Property::ColorSpace,
         KFileMetaData::Property::PixelFormat,
+#endif
     };
 
     for (const auto &prop : kOrder) {

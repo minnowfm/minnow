@@ -31,6 +31,10 @@ on:
         description: 'Build Flatpak'
         type: boolean
         default: true
+      run_aur:
+        description: 'Publish to AUR'
+        type: boolean
+        default: true
 
 jobs:
   # Every package format's version string is derived from the pushed tag here, instead of
@@ -194,3 +198,64 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: release-files/*
+
+  publish-aur:
+    if: ${{ github.event_name == 'push' || inputs.run_aur }}
+    needs: [compute-version, create-release]
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    # Commits the bumped pkgver/checksums back to main, so the checked-in PKGBUILDs don't
+    # go stale the moment this job updates the AUR copies.
+    permissions:
+      contents: write
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib
+      - uses: actions/checkout@v4
+      - name: Set up AUR SSH access
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+          EOF
+          git config --global user.name "Minnow release bot"
+          git config --global user.email "noreply@example.com"
+      - name: Bump PKGBUILD versions and checksums
+        run: |
+          VERSION="${{ needs.compute-version.outputs.version }}"
+          for pkg in minnow minnow-bin; do
+            sed -i "s/^pkgver=.*/pkgver=$VERSION/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/$pkg/PKGBUILD
+            (cd packaging/aur/$pkg && updpkgsums && makepkg --printsrcinfo > .SRCINFO)
+          done
+      - name: Push to AUR
+        run: |
+          for pkg in minnow minnow-bin; do
+            git clone "ssh://aur@aur.archlinux.org/$pkg.git" "/tmp/aur-$pkg"
+            cp packaging/aur/$pkg/PKGBUILD packaging/aur/$pkg/.SRCINFO "/tmp/aur-$pkg/"
+            cd "/tmp/aur-$pkg"
+            git add PKGBUILD .SRCINFO
+            git commit -m "Update to ${{ needs.compute-version.outputs.version }}" || { echo "no changes for $pkg"; cd -; continue; }
+            git push origin master
+            cd -
+          done
+      - name: Commit updated PKGBUILDs/.SRCINFOs back to main
+        # The checkout above leaves HEAD detached at the tag, so pushing straight back isn't
+        # safe if main has moved on since - use a separate worktree on main and copy the
+        # freshly updated files into it instead.
+        run: |
+          git fetch origin main
+          git worktree add /tmp/main-worktree origin/main
+          for pkg in minnow minnow-bin; do
+            cp packaging/aur/$pkg/PKGBUILD packaging/aur/$pkg/.SRCINFO /tmp/main-worktree/packaging/aur/$pkg/
+          done
+          cd /tmp/main-worktree
+          git add packaging/aur/*/PKGBUILD packaging/aur/*/.SRCINFO
+          git commit -m "Update AUR packages to ${{ needs.compute-version.outputs.version }}" || { echo "no changes to commit"; exit 0; }
+          git push origin HEAD:main
