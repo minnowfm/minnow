@@ -73,5 +73,6 @@ private:
     QStringList m_sectionOrder;
     QVector<DriveEntry> m_drives;
     QVector<DriveEntry> m_networkShares;
+    bool m_drivesInitialized = false;
     QListWidgetItem *m_dropHighlightItem = nullptr;
 };

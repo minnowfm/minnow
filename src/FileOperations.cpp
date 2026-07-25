@@ -195,12 +195,16 @@ void openTerminal(const QUrl &url, QWidget *parent)
         }
     }
 
+    // Kept in sync with the terminal list SettingsTab advertises as options.
     static const QStringList candidates = {
         QStringLiteral("konsole"),
         QStringLiteral("gnome-terminal"),
         QStringLiteral("xterm"),
         QStringLiteral("alacritty"),
         QStringLiteral("kitty"),
+        QStringLiteral("foot"),
+        QStringLiteral("wezterm"),
+        QStringLiteral("tilix"),
     };
     for (const QString &candidate : candidates) {
         const QString path = QStandardPaths::findExecutable(candidate);

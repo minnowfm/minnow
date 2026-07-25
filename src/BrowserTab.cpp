@@ -235,6 +235,9 @@ void BrowserTab::loadUrl(const QUrl &url)
 {
     m_currentUrl = url;
     m_pathBar->setUrl(url);
+    // Otherwise every preview ever generated stays reachable for the tab's whole lifetime -
+    // browsing through many image/video-heavy folders would grow this without bound.
+    m_proxyModel->clearThumbnails();
     m_dirLister->openUrl(url);
     applySortForCurrentFolder();
     applyViewModeForCurrentFolder();
@@ -630,6 +633,13 @@ void BrowserTab::setShowHiddenFiles(bool show)
 
     QSettings settings;
     settings.setValue(QStringLiteral("View/ShowHiddenFiles"), show);
+
+    // An active search was already filtered by the old setting - re-run it so enabling
+    // hidden files can surface previously-omitted matches and disabling them actually
+    // drops the ones already shown, instead of leaving stale results in place.
+    if (searchActive())
+        startSearch();
+
     Q_EMIT statusChanged();
 }
 

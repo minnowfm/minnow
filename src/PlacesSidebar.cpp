@@ -227,10 +227,13 @@ void PlacesSidebar::refreshDrives()
 
     // Same set as before (the common case on every periodic re-check) - skip the
     // clear()+rebuild so the list doesn't flicker or drop scroll position/selection
-    // every few seconds just to detect newly mounted network shares.
-    if (newDrives == m_drives && newNetworkShares == m_networkShares)
+    // every few seconds just to detect newly mounted network shares. Never skip the very
+    // first call though - on a system with no eligible extra volumes, both vectors start
+    // and stay empty, and Places/Bookmarks would otherwise never get built at all.
+    if (m_drivesInitialized && newDrives == m_drives && newNetworkShares == m_networkShares)
         return;
 
+    m_drivesInitialized = true;
     m_drives = newDrives;
     m_networkShares = newNetworkShares;
     rebuildAll();
