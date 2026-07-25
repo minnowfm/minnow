@@ -43,6 +43,14 @@ target_link_libraries(minnow_core PUBLIC
 )
 target_include_directories(minnow_core PUBLIC src)
 
+# KFileMetaData::Property::{VideoCodec,AudioCodec,PixelFormat,ColorSpace} only exist since
+# 6.13 - older KFileMetaData (e.g. the one bundled by the org.kde.Sdk 6.7 Flatpak runtime)
+# doesn't have them. Gate their use instead of hard requiring a newer KFileMetaData than
+# some build environments ship.
+if(KF6FileMetaData_VERSION VERSION_GREATER_EQUAL 6.13.0)
+    target_compile_definitions(minnow_core PUBLIC MINNOW_HAVE_KFILEMETADATA_CODEC_PROPS)
+endif()
+
 add_executable(minnow
     src/main.cpp
     src/MainWindow.cpp
