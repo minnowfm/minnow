@@ -3,6 +3,7 @@
 #include "FileOperations.h"
 #include "PathBar.h"
 #include "PlacesSidebar.h"
+#include "SettingsTab.h"
 #include "TabBar.h"
 
 #include <QApplication>
@@ -51,7 +52,21 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     // both rows' column widths in sync automatically, so the sidebar's own width drives it.
     grid->addWidget(new QWidget(central), 0, 0);
     grid->addWidget(m_tabBar, 0, 1);
-    grid->addWidget(m_sidebar, 1, 0);
+
+    auto *sidebarContainer = new QWidget(central);
+    auto *sidebarLayout = new QVBoxLayout(sidebarContainer);
+    sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    sidebarLayout->setSpacing(0);
+    sidebarLayout->addWidget(m_sidebar, 1);
+
+    auto *settingsButton = new QToolButton(sidebarContainer);
+    settingsButton->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
+    settingsButton->setToolTip(tr("Settings"));
+    settingsButton->setAutoRaise(true);
+    connect(settingsButton, &QToolButton::clicked, this, &MainWindow::openSettingsTab);
+    sidebarLayout->addWidget(settingsButton);
+
+    grid->addWidget(sidebarContainer, 1, 0);
 
     m_contentCard = new QFrame(this);
     m_contentCard->setObjectName(QStringLiteral("contentCard"));
@@ -110,7 +125,7 @@ void MainWindow::setupToolBar()
     toolbar->addWidget(m_navigatorHost);
 
     m_filterEdit = new QLineEdit(this);
-    m_filterEdit->setPlaceholderText(tr("Search this folder…"));
+    m_filterEdit->setPlaceholderText(tr("Search…"));
     m_filterEdit->setClearButtonEnabled(true);
     m_filterEdit->setMaximumWidth(200);
     toolbar->addWidget(m_filterEdit);
@@ -170,6 +185,8 @@ void MainWindow::closeTab(int index)
         return;
     }
     QWidget *w = m_tabStack->widget(index);
+    if (w == m_settingsTab)
+        m_settingsTab = nullptr;
     m_tabBar->removeTab(index);
     m_tabStack->removeWidget(w);
     w->deleteLater();
@@ -201,8 +218,13 @@ void MainWindow::onCurrentTabChanged(int index)
         m_navigatorHostLayout->addWidget(nav);
         nav->show();
 
-        const QSignalBlocker blocker(m_filterEdit);
+        const QSignalBlocker filterBlocker(m_filterEdit);
         m_filterEdit->setText(tab->filterText());
+        m_filterEdit->setEnabled(true);
+    } else {
+        const QSignalBlocker filterBlocker(m_filterEdit);
+        m_filterEdit->clear();
+        m_filterEdit->setEnabled(false);
     }
 
     updateChromeForCurrentTab();
@@ -214,6 +236,43 @@ void MainWindow::openNewWindow(const QUrl &url)
     auto *window = new MainWindow(url);
     window->setAttribute(Qt::WA_DeleteOnClose);
     window->show();
+}
+
+void MainWindow::openSettingsTab()
+{
+    if (m_settingsTab) {
+        const int idx = m_tabStack->indexOf(m_settingsTab);
+        if (idx >= 0) {
+            m_tabBar->setCurrentIndex(idx);
+            return;
+        }
+        m_settingsTab = nullptr;
+    }
+
+    m_settingsTab = new SettingsTab(this);
+    connect(m_settingsTab, &SettingsTab::showHiddenFilesChanged, this, [this](bool show) {
+        for (int i = 0; i < m_tabStack->count(); ++i) {
+            if (auto *tab = qobject_cast<BrowserTab *>(m_tabStack->widget(i)))
+                tab->setShowHiddenFiles(show);
+        }
+    });
+    connect(m_settingsTab, &SettingsTab::showThumbnailsChanged, this, [this](bool show) {
+        for (int i = 0; i < m_tabStack->count(); ++i) {
+            if (auto *tab = qobject_cast<BrowserTab *>(m_tabStack->widget(i)))
+                tab->setShowThumbnails(show);
+        }
+    });
+    connect(m_settingsTab, &SettingsTab::iconSizeChanged, this, [this](int size) {
+        for (int i = 0; i < m_tabStack->count(); ++i) {
+            if (auto *tab = qobject_cast<BrowserTab *>(m_tabStack->widget(i)))
+                tab->setIconSize(size);
+        }
+    });
+
+    m_tabStack->addWidget(m_settingsTab);
+    const int index = m_tabBar->addTab(tr("Settings"));
+    m_tabBar->setCurrentIndex(index);
+    updateContentCardCorners();
 }
 
 void MainWindow::onTabUrlChanged(const QUrl &url)
@@ -250,8 +309,15 @@ void MainWindow::onTabTitleChanged()
 void MainWindow::updateChromeForCurrentTab()
 {
     BrowserTab *tab = currentTab();
-    if (!tab)
+    if (!tab) {
+        m_backButton->setEnabled(false);
+        m_forwardButton->setEnabled(false);
+        m_upButton->setEnabled(false);
+        setWindowTitle(tr("Settings"));
+        m_itemCountLabel->clear();
+        m_freeSpaceLabel->clear();
         return;
+    }
 
     m_backButton->setEnabled(tab->canGoBack());
     m_forwardButton->setEnabled(tab->canGoForward());
@@ -259,7 +325,11 @@ void MainWindow::updateChromeForCurrentTab()
     setWindowTitle(tab->displayName());
     m_sidebar->setCurrentUrl(tab->currentUrl());
 
-    m_itemCountLabel->setText(tr("%n item(s)", "", tab->itemCount()));
+    const QList<QUrl> selected = tab->selectedUrls();
+    if (selected.size() == 1)
+        m_itemCountLabel->setText(selected.first().fileName());
+    else
+        m_itemCountLabel->setText(tr("%n item(s)", "", tab->itemCount()));
     const QString localPath = tab->currentUrl().isLocalFile() ? tab->currentUrl().toLocalFile() : QDir::homePath();
     QStorageInfo info(localPath);
     if (info.isValid()) {
@@ -349,6 +419,7 @@ void MainWindow::setupShortcuts()
         closeTab(m_tabBar->currentIndex());
     });
 
+    QList<QShortcut *> activateShortcuts;
     for (const auto key : {Qt::Key_Return, Qt::Key_Enter}) {
         auto *shortcut = new QShortcut(QKeySequence(key), this);
         shortcut->setContext(Qt::WindowShortcut);
@@ -356,7 +427,17 @@ void MainWindow::setupShortcuts()
             if (auto *tab = currentTab())
                 tab->activateCurrentItem();
         });
+        activateShortcuts << shortcut;
     }
+    // A WindowShortcut consumes the key event outright, regardless of which widget has
+    // focus - it never even reaches a focused QLineEdit's own keyPressEvent. Disabling it
+    // whenever a line edit (path bar edit line, search box) has focus lets Return reach
+    // them normally instead of being stolen for "activate the selected item".
+    connect(qApp, &QApplication::focusChanged, this, [activateShortcuts](QWidget *, QWidget *now) {
+        const bool inLineEdit = qobject_cast<QLineEdit *>(now) != nullptr;
+        for (QShortcut *shortcut : activateShortcuts)
+            shortcut->setEnabled(!inLineEdit);
+    });
 
     auto *trashShortcut = new QShortcut(QKeySequence(Qt::Key_Delete), this);
     trashShortcut->setContext(Qt::WindowShortcut);

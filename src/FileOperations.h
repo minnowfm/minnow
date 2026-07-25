@@ -1,5 +1,6 @@
 #pragma once
 
+#include <KFileItem>
 #include <QList>
 #include <QUrl>
 #include <QWidget>
@@ -19,4 +20,9 @@ void remove(const QList<QUrl> &urls, QWidget *parent);
 void rename(const QUrl &url, const QString &newName, QWidget *parent);
 void mkdir(const QUrl &parentDir, const QString &name, QWidget *parent);
 void openUrl(const QUrl &url, QWidget *parent);
+void showProperties(const KFileItemList &items, QWidget *parent);
+void openWith(const QList<QUrl> &urls, QWidget *parent);
+void emptyTrash(QWidget *parent);
+void openTerminal(const QUrl &url, QWidget *parent);
+void batchRename(const QList<QUrl> &urls, const QString &newNamePattern, QChar placeHolder, QWidget *parent);
 }

@@ -14,12 +14,15 @@ find_package(KF6CoreAddons REQUIRED)
 find_package(KF6ConfigWidgets REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
 find_package(KF6KIO REQUIRED)
+find_package(KF6FileMetaData REQUIRED)
 
 add_library(minnow_core STATIC
     src/PathUtils.cpp
     src/PathUtils.h
     src/FileOperations.cpp
     src/FileOperations.h
+    src/PropertiesDialog.cpp
+    src/PropertiesDialog.h
 )
 
 target_link_libraries(minnow_core PUBLIC
@@ -31,6 +34,7 @@ target_link_libraries(minnow_core PUBLIC
     KF6::KIOWidgets
     KF6::KIOFileWidgets
     KF6::KIOGui
+    KF6::FileMetaData
 )
 target_include_directories(minnow_core PUBLIC src)
 
@@ -46,6 +50,10 @@ add_executable(minnow
     src/PathBar.h
     src/TabBar.cpp
     src/TabBar.h
+    src/ThumbnailProxyModel.cpp
+    src/ThumbnailProxyModel.h
+    src/SettingsTab.cpp
+    src/SettingsTab.h
     src/resources.qrc
 )
 
@@ -62,6 +70,10 @@ install(TARGETS minnow DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/io.github.minnowfm.Minnow.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES data/io.github.minnowfm.Minnow.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES data/icons/io.github.minnowfm.Minnow.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+foreach(_icon_size 16 22 24 32 48 64 128)
+    install(FILES data/icons/hicolor/${_icon_size}x${_icon_size}/apps/io.github.minnowfm.Minnow.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_icon_size}x${_icon_size}/apps)
+endforeach()
 
 option(BUILD_TESTING "Build automated tests" ON)
 if(BUILD_TESTING)

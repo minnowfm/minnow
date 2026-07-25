@@ -3,6 +3,7 @@
 #include "PathBar.h"
 #include "PathUtils.h"
 #include "PlacesSidebar.h"
+#include "ThumbnailProxyModel.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -11,6 +12,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFont>
 #include <QFrame>
 #include <QHeaderView>
 #include <QIcon>
@@ -25,14 +27,21 @@
 #include <QScrollBar>
 #include <QSettings>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QTreeView>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
 #include <KDirLister>
 #include <KDirModel>
-#include <KDirSortFilterProxyModel>
 #include <KFileItem>
+#include <KFileItemActions>
+#include <KFileItemListProperties>
+#include <KIO/ListJob>
+#include <KIO/PreviewJob>
+#include <KJob>
 
 #include <algorithm>
 
@@ -107,13 +116,18 @@ BrowserTab::BrowserTab(PlacesSidebar *sidebar, QWidget *parent)
 
 void BrowserTab::setupViews()
 {
+    QSettings settings;
+    m_showHiddenFiles = settings.value(QStringLiteral("View/ShowHiddenFiles"), false).toBool();
+    m_showThumbnails = settings.value(QStringLiteral("View/ShowThumbnails"), true).toBool();
+
     m_dirLister = new KDirLister();
     m_dirLister->setAutoErrorHandlingEnabled(true);
+    m_dirLister->setShowHiddenFiles(m_showHiddenFiles);
 
     m_dirModel = new KDirModel(this);
     m_dirModel->setDirLister(m_dirLister);
 
-    m_proxyModel = new KDirSortFilterProxyModel(this);
+    m_proxyModel = new ThumbnailProxyModel(this);
     m_proxyModel->setSourceModel(m_dirModel);
 
     m_gridView = new QListView(this);
@@ -159,15 +173,36 @@ void BrowserTab::setupViews()
     m_listView->setDefaultDropAction(Qt::MoveAction);
     new SmoothScroller(m_listView);
 
+    m_searchResultsView = new QTreeWidget(this);
+    m_searchResultsView->setColumnCount(2);
+    m_searchResultsView->setHeaderLabels({tr("Name"), tr("Location")});
+    m_searchResultsView->setRootIsDecorated(false);
+    m_searchResultsView->setUniformRowHeights(true);
+    m_searchResultsView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_searchResultsView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_searchResultsView->setFrameShape(QFrame::NoFrame);
+    m_searchResultsView->setAlternatingRowColors(true);
+
+    m_searchDebounceTimer = new QTimer(this);
+    m_searchDebounceTimer->setSingleShot(true);
+    connect(m_searchDebounceTimer, &QTimer::timeout, this, &BrowserTab::startSearch);
+
+    connect(m_searchResultsView, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item, int) {
+        activateSearchResult(item);
+    });
+
     m_viewStack = new QStackedWidget(this);
     m_viewStack->addWidget(m_gridView);
     m_viewStack->addWidget(m_listView);
+    m_viewStack->addWidget(m_searchResultsView);
     m_viewStack->setCurrentWidget(m_gridView);
 
     connect(m_gridView, &QAbstractItemView::doubleClicked, this, &BrowserTab::onItemActivated);
     connect(m_listView, &QAbstractItemView::doubleClicked, this, &BrowserTab::onItemActivated);
     connect(m_gridView, &QWidget::customContextMenuRequested, this, &BrowserTab::showViewContextMenu);
     connect(m_listView, &QWidget::customContextMenuRequested, this, &BrowserTab::showViewContextMenu);
+    connect(m_gridView->selectionModel(), &QItemSelectionModel::selectionChanged, this, &BrowserTab::statusChanged);
+    connect(m_listView->selectionModel(), &QItemSelectionModel::selectionChanged, this, &BrowserTab::statusChanged);
 
     m_gridView->viewport()->installEventFilter(this);
     m_listView->viewport()->installEventFilter(this);
@@ -178,6 +213,10 @@ void BrowserTab::setupViews()
     // shortcut fires regardless of which tab's view is actually visible.
 
     connect(m_dirLister, &KCoreDirLister::completed, this, &BrowserTab::statusChanged);
+    connect(m_dirLister, &KCoreDirLister::itemsAdded, this, [this](const QUrl &, const KFileItemList &items) {
+        if (m_showThumbnails)
+            requestThumbnails(items);
+    });
     connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &BrowserTab::onSortIndicatorChanged);
 }
 
@@ -199,6 +238,8 @@ void BrowserTab::loadUrl(const QUrl &url)
     m_dirLister->openUrl(url);
     applySortForCurrentFolder();
     applyViewModeForCurrentFolder();
+    if (searchActive())
+        startSearch();
     Q_EMIT urlChanged(url);
     Q_EMIT titleChanged();
     Q_EMIT historyChanged();
@@ -257,6 +298,13 @@ QAbstractItemView *BrowserTab::currentView() const
 QList<QUrl> BrowserTab::selectedUrls() const
 {
     QList<QUrl> urls;
+
+    if (searchActive()) {
+        for (QTreeWidgetItem *item : m_searchResultsView->selectedItems())
+            urls << item->data(0, Qt::UserRole).toUrl();
+        return urls;
+    }
+
     QAbstractItemView *view = currentView();
     if (!view->selectionModel())
         return urls;
@@ -273,12 +321,37 @@ QList<QUrl> BrowserTab::selectedUrls() const
 
 void BrowserTab::activateCurrentItem()
 {
+    if (searchActive()) {
+        activateSearchResult(m_searchResultsView->currentItem());
+        return;
+    }
     onItemActivated(currentView()->currentIndex());
+}
+
+void BrowserTab::activateSearchResult(QTreeWidgetItem *item)
+{
+    if (!item)
+        return;
+    const QUrl url = item->data(0, Qt::UserRole).toUrl();
+    const bool isDir = item->data(0, Qt::UserRole + 1).toBool();
+    if (!url.isValid())
+        return;
+    if (isDir)
+        navigateTo(url);
+    else
+        FileOperations::openUrl(url, this);
 }
 
 int BrowserTab::itemCount() const
 {
-    return m_proxyModel->rowCount();
+    if (!searchActive())
+        return m_proxyModel->rowCount();
+    int count = 0;
+    if (m_searchHereSection)
+        count += m_searchHereSection->childCount();
+    if (m_searchSubfoldersSection)
+        count += m_searchSubfoldersSection->childCount();
+    return count;
 }
 
 void BrowserTab::onItemActivated(const QModelIndex &proxyIndex)
@@ -435,16 +508,150 @@ void BrowserTab::saveFolderViewModes()
 
 void BrowserTab::setFilterText(const QString &text)
 {
+    const bool wasActive = searchActive();
     m_filterText = text;
-    m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
-    m_proxyModel->setFilterFixedString(text);
+
+    if (searchActive()) {
+        m_searchDebounceTimer->start(400);
+    } else if (wasActive) {
+        stopSearch();
+        applyViewModeForCurrentFolder();
+    }
     Q_EMIT statusChanged();
+}
+
+void BrowserTab::startSearch()
+{
+    if (m_searchJob) {
+        m_searchJob->kill();
+        m_searchJob = nullptr;
+    }
+    m_searchResultsView->clear();
+    m_searchHereSection = nullptr;
+    m_searchSubfoldersSection = nullptr;
+    m_viewStack->setCurrentWidget(m_searchResultsView);
+
+    if (m_filterText.isEmpty())
+        return;
+
+    m_searchHereSection = new QTreeWidgetItem(m_searchResultsView);
+    m_searchHereSection->setText(0, tr("In This Folder"));
+    m_searchHereSection->setFlags(Qt::ItemIsEnabled);
+    m_searchHereSection->setFirstColumnSpanned(true);
+    QFont sectionFont = m_searchHereSection->font(0);
+    sectionFont.setBold(true);
+    m_searchHereSection->setFont(0, sectionFont);
+    m_searchHereSection->setExpanded(true);
+
+    m_searchSubfoldersSection = new QTreeWidgetItem(m_searchResultsView);
+    m_searchSubfoldersSection->setText(0, tr("In Subfolders"));
+    m_searchSubfoldersSection->setFlags(Qt::ItemIsEnabled);
+    m_searchSubfoldersSection->setFirstColumnSpanned(true);
+    m_searchSubfoldersSection->setFont(0, sectionFont);
+    m_searchSubfoldersSection->setExpanded(true);
+
+    m_searchJob = KIO::listRecursive(m_currentUrl, KIO::HideProgressInfo);
+    const QString query = m_filterText;
+    const QUrl rootDir = m_currentUrl.adjusted(QUrl::StripTrailingSlash);
+    connect(m_searchJob, &KIO::ListJob::entries, this,
+            [this, query, rootDir](KIO::Job *job, const KIO::UDSEntryList &list) {
+        const QUrl dirUrl = static_cast<KIO::ListJob *>(job)->url();
+        for (const KIO::UDSEntry &entry : list) {
+            const QString name = entry.stringValue(KIO::UDSEntry::UDS_NAME);
+            if (name == QLatin1String(".") || name == QLatin1String(".."))
+                continue;
+            if (!name.contains(query, Qt::CaseInsensitive))
+                continue;
+
+            const KFileItem item(entry, dirUrl, true, true);
+            // Decide the section from the item's own resolved parent directory rather than
+            // the job's reported url() - for a recursive listing the latter does not
+            // reliably reflect which subdirectory a given batch of entries came from.
+            const QUrl itemDir = item.url().adjusted(QUrl::RemoveFilename | QUrl::StripTrailingSlash);
+            QTreeWidgetItem *parentItem = itemDir == rootDir ? m_searchHereSection : m_searchSubfoldersSection;
+
+            auto *treeItem = new QTreeWidgetItem(parentItem);
+            treeItem->setText(0, item.url().fileName());
+            treeItem->setText(1, item.url().adjusted(QUrl::RemoveFilename).toDisplayString(QUrl::PreferLocalFile));
+            treeItem->setIcon(0, QIcon::fromTheme(item.iconName()));
+            treeItem->setData(0, Qt::UserRole, item.url());
+            treeItem->setData(0, Qt::UserRole + 1, item.isDir());
+        }
+        m_searchHereSection->setHidden(m_searchHereSection->childCount() == 0);
+        m_searchSubfoldersSection->setHidden(m_searchSubfoldersSection->childCount() == 0);
+        Q_EMIT statusChanged();
+    });
+    connect(m_searchJob, &KJob::result, this, [this](KJob *job) {
+        if (m_searchJob == job)
+            m_searchJob = nullptr;
+        Q_EMIT statusChanged();
+    });
+}
+
+void BrowserTab::stopSearch()
+{
+    if (m_searchJob) {
+        m_searchJob->kill();
+        m_searchJob = nullptr;
+    }
+    m_searchResultsView->clear();
+    m_searchHereSection = nullptr;
+    m_searchSubfoldersSection = nullptr;
 }
 
 void BrowserTab::setIconSize(int size)
 {
     m_gridView->setIconSize(QSize(size, size));
     m_gridView->setGridSize(QSize(size + 48, size + 40));
+}
+
+void BrowserTab::setShowHiddenFiles(bool show)
+{
+    if (m_showHiddenFiles == show)
+        return;
+    m_showHiddenFiles = show;
+    m_dirLister->setShowHiddenFiles(show);
+    m_dirLister->emitChanges();
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("View/ShowHiddenFiles"), show);
+    Q_EMIT statusChanged();
+}
+
+void BrowserTab::setShowThumbnails(bool show)
+{
+    if (m_showThumbnails == show)
+        return;
+    m_showThumbnails = show;
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("View/ShowThumbnails"), show);
+
+    if (show)
+        requestThumbnails(m_dirLister->items());
+    else
+        m_proxyModel->clearThumbnails();
+}
+
+void BrowserTab::requestThumbnails(const QList<KFileItem> &items)
+{
+    QList<KFileItem> fileItems;
+    for (const KFileItem &item : items) {
+        if (item.isFile())
+            fileItems << item;
+    }
+    if (fileItems.isEmpty())
+        return;
+
+    // Passing every installed plugin explicitly (instead of KIO's global preview defaults)
+    // means video thumbnails work as soon as a thumbnailer for them - e.g. ffmpegthumbs -
+    // is installed, without depending on whatever the system-wide preview settings default
+    // to (historically off for video, independent of whether a plugin is even present).
+    static const QStringList enabledPlugins = KIO::PreviewJob::availablePlugins();
+    KIO::PreviewJob *job = KIO::filePreview(fileItems, QSize(128, 128), &enabledPlugins);
+    connect(job, &KIO::PreviewJob::gotPreview, m_proxyModel, [this](const KFileItem &item, const QPixmap &preview) {
+        m_proxyModel->setThumbnail(item.url(), QIcon(preview));
+    });
 }
 
 void BrowserTab::onSortIndicatorChanged(int column, Qt::SortOrder order)
@@ -538,11 +745,34 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
             singleDirItem = it;
     }
 
+    KFileItemList selectedItems;
+    if (view->selectionModel()) {
+        for (const QModelIndex &proxyIndex : view->selectionModel()->selectedRows()) {
+            const KFileItem item = m_dirModel->itemForIndex(m_proxyModel->mapToSource(proxyIndex));
+            if (!item.isNull())
+                selectedItems << item;
+        }
+    }
+
     if (!selected.isEmpty()) {
         QAction *openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
-        connect(openAction, &QAction::triggered, this, [this, selected] {
-            for (const QUrl &url : selected)
-                FileOperations::openUrl(url, this);
+        connect(openAction, &QAction::triggered, this, [this, selectedItems] {
+            // Directories navigate the current tab in place (like double-click) rather than
+            // going through FileOperations::openUrl(), which hands local directories off to
+            // whatever the desktop's default file-manager association is - often a new window.
+            bool navigatedInPlace = false;
+            for (const KFileItem &item : selectedItems) {
+                if (item.isDir()) {
+                    if (!navigatedInPlace) {
+                        navigateTo(item.url());
+                        navigatedInPlace = true;
+                    } else {
+                        Q_EMIT openInNewTabRequested(item.url());
+                    }
+                } else {
+                    FileOperations::openUrl(item.url(), this);
+                }
+            }
         });
 
         if (!singleDirItem.isNull()) {
@@ -555,24 +785,38 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
             connect(newWindowAction, &QAction::triggered, this, [this, dirUrl] {
                 Q_EMIT openInNewWindowRequested(dirUrl);
             });
+        }
 
-            addPinAction(tr("Pin to Sidebar"), dirUrl);
+        QAction *openWithAction = menu.addAction(QIcon::fromTheme(QStringLiteral("system-run")), tr("Open With…"));
+        connect(openWithAction, &QAction::triggered, this, [this, selected] { FileOperations::openWith(selected, this); });
+
+        if (!selectedItems.isEmpty()) {
+            // Service-menu/plugin actions (terminal-here variants, K3b, Share, Activities, tags,
+            // ...) are numerous and situational - tucked behind a submenu instead of dumped flat
+            // so the common actions around it stay scannable.
+            QMenu *moreActionsMenu = menu.addMenu(tr("More Actions"));
+            auto *fileItemActions = new KFileItemActions(moreActionsMenu);
+            fileItemActions->setParentWidget(this);
+            fileItemActions->setItemListProperties(KFileItemListProperties(selectedItems));
+            fileItemActions->addActionsTo(moreActionsMenu);
+            if (moreActionsMenu->isEmpty())
+                menu.removeAction(moreActionsMenu->menuAction());
         }
 
         menu.addSeparator();
-
-        QAction *copyAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"));
-        connect(copyAction, &QAction::triggered, this, [selected] {
-            auto *mime = new QMimeData();
-            mime->setUrls(selected);
-            QApplication::clipboard()->setMimeData(mime);
-        });
 
         QAction *cutAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-cut")), tr("Cut"));
         connect(cutAction, &QAction::triggered, this, [selected] {
             auto *mime = new QMimeData();
             mime->setUrls(selected);
             mime->setData(QStringLiteral("application/x-kde-cutselection"), QByteArrayLiteral("1"));
+            QApplication::clipboard()->setMimeData(mime);
+        });
+
+        QAction *copyAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"));
+        connect(copyAction, &QAction::triggered, this, [selected] {
+            auto *mime = new QMimeData();
+            mime->setUrls(selected);
             QApplication::clipboard()->setMimeData(mime);
         });
 
@@ -589,7 +833,26 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
                 if (ok && !newName.isEmpty() && newName != oldName)
                     FileOperations::rename(renameUrl, newName, this);
             });
+        } else {
+            QAction *bulkRenameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")),
+                                                         tr("Rename %1 Items…").arg(selected.size()));
+            connect(bulkRenameAction, &QAction::triggered, this, [this, selected] {
+                bool ok = false;
+                const QString pattern =
+                    QInputDialog::getText(this, tr("Bulk Rename"),
+                                           tr("New name (use # for an auto-incrementing number, e.g. \"photo #\"):"),
+                                           QLineEdit::Normal, QStringLiteral("# "), &ok);
+                if (ok && !pattern.isEmpty())
+                    FileOperations::batchRename(selected, pattern, QLatin1Char('#'), this);
+            });
         }
+
+        if (!singleDirItem.isNull()) {
+            menu.addSeparator();
+            addPinAction(tr("Pin to Sidebar"), singleDirItem.url());
+        }
+
+        menu.addSeparator();
 
         QAction *trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
         connect(trashAction, &QAction::triggered, this, [this, selected] {
@@ -633,6 +896,17 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
     viewGroup->addAction(listAction);
     connect(iconsAction, &QAction::triggered, this, &BrowserTab::switchToGridView);
     connect(listAction, &QAction::triggered, this, &BrowserTab::switchToListView);
+
+    viewMenu->addSeparator();
+    QAction *hiddenFilesAction = viewMenu->addAction(tr("Show Hidden Files"));
+    hiddenFilesAction->setCheckable(true);
+    hiddenFilesAction->setChecked(m_showHiddenFiles);
+    connect(hiddenFilesAction, &QAction::triggered, this, &BrowserTab::setShowHiddenFiles);
+
+    QAction *thumbnailsAction = viewMenu->addAction(tr("Show Thumbnails"));
+    thumbnailsAction->setCheckable(true);
+    thumbnailsAction->setChecked(m_showThumbnails);
+    connect(thumbnailsAction, &QAction::triggered, this, &BrowserTab::setShowThumbnails);
 
     viewMenu->addSeparator();
     QMenu *sizeMenu = viewMenu->addMenu(tr("Icon Size"));
@@ -697,16 +971,57 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
 
     menu.addSeparator();
 
-    QAction *newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
-    connect(newFolderAction, &QAction::triggered, this, [this] {
-        bool ok = false;
-        const QString name =
-            QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal, tr("New Folder"), &ok);
-        if (ok && !name.isEmpty())
-            FileOperations::mkdir(m_currentUrl, name, this);
+    if (m_currentUrl.scheme() == QLatin1String("trash")) {
+        QAction *emptyTrashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Empty Trash"));
+        connect(emptyTrashAction, &QAction::triggered, this, [this] { FileOperations::emptyTrash(this); });
+        menu.addSeparator();
+    } else {
+        QAction *newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
+        connect(newFolderAction, &QAction::triggered, this, [this] {
+            bool ok = false;
+            const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal,
+                                                         tr("New Folder"), &ok);
+            if (ok && !name.isEmpty())
+                FileOperations::mkdir(m_currentUrl, name, this);
+        });
+
+        if (m_currentUrl.isLocalFile()) {
+            QAction *terminalAction =
+                menu.addAction(QIcon::fromTheme(QStringLiteral("utilities-terminal")), tr("Open Terminal Here"));
+            const QUrl terminalUrl = m_currentUrl;
+            connect(terminalAction, &QAction::triggered, this, [terminalUrl] { FileOperations::openTerminal(terminalUrl, nullptr); });
+        }
+
+        addPinAction(tr("Pin This Folder to Sidebar"), m_currentUrl);
+    }
+
+    menu.addSeparator();
+
+    QAction *selectAllAction = menu.addAction(tr("Select All"));
+    connect(selectAllAction, &QAction::triggered, this, [view] { view->selectAll(); });
+
+    QAction *invertSelectionAction = menu.addAction(tr("Invert Selection"));
+    connect(invertSelectionAction, &QAction::triggered, this, [view] {
+        if (!view->model() || !view->selectionModel())
+            return;
+        const QModelIndex topLeft = view->model()->index(0, 0);
+        const QModelIndex bottomRight = view->model()->index(view->model()->rowCount() - 1, view->model()->columnCount() - 1);
+        view->selectionModel()->select(QItemSelection(topLeft, bottomRight), QItemSelectionModel::Toggle | QItemSelectionModel::Rows);
     });
 
-    addPinAction(tr("Pin This Folder to Sidebar"), m_currentUrl);
+    // Properties always sits alone at the very bottom, after every other action - matching
+    // the conventional Windows/Dolphin placement instead of being buried mid-menu.
+    menu.addSeparator();
+    QAction *propertiesAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-properties")), tr("Properties"));
+    KFileItemList propertiesItems = selectedItems;
+    if (propertiesItems.isEmpty()) {
+        const KFileItem rootItem = m_dirLister->rootItem();
+        if (!rootItem.isNull())
+            propertiesItems << rootItem;
+    }
+    connect(propertiesAction, &QAction::triggered, this, [this, propertiesItems] {
+        FileOperations::showProperties(propertiesItems, this);
+    });
 
     menu.exec(view->viewport()->mapToGlobal(pos));
 }
