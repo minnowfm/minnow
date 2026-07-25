@@ -79,7 +79,10 @@ SettingsTab::SettingsTab(QWidget *parent)
     form->addRow(tr("Terminal:"), m_terminalCombo);
     connect(m_terminalCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
         QSettings settings;
-        const QString value = m_terminalCombo->currentIndex() == 0 ? QString() : text;
+        // currentIndex() alone isn't reliable here - editing the line edit's text in place
+        // (e.g. typing over "Auto-detect (recommended)") doesn't move it off 0, so compare
+        // the actual text instead of trusting the index.
+        const QString value = text == m_terminalCombo->itemText(0) ? QString() : text;
         settings.setValue(QStringLiteral("Terminal/Command"), value);
     });
 

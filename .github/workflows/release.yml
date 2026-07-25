@@ -41,7 +41,7 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules \
-            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio git
+            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio kfilemetadata git
       - uses: actions/checkout@v4
       - name: Build and install to a staging root
         run: |
@@ -70,6 +70,7 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential cmake extra-cmake-modules qt6-base-dev \
             libkf6coreaddons-dev libkf6configwidgets-dev libkf6widgetsaddons-dev libkf6kio-dev \
+            libkf6filemetadata-dev \
             debhelper devscripts fakeroot git
       - uses: actions/checkout@v4
       - name: Build .deb
@@ -88,7 +89,7 @@ jobs:
         run: |
           dnf install -y rpm-build cmake gcc-c++ extra-cmake-modules git tar \
             qt6-qtbase-devel kf6-kcoreaddons-devel kf6-kconfigwidgets-devel \
-            kf6-kwidgetsaddons-devel kf6-kio-devel
+            kf6-kwidgetsaddons-devel kf6-kio-devel kf6-kfilemetadata-devel
       - uses: actions/checkout@v4
       - name: Build .rpm
         run: packaging/rpm/build.sh
