@@ -65,7 +65,7 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     : QListWidget(parent)
 {
     setFrameShape(QFrame::NoFrame);
-    setFixedWidth(150);
+    setFixedWidth(200);
     setIconSize(QSize(18, 18));
     setSpacing(2);
     setUniformItemSizes(false);
