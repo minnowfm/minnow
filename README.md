@@ -36,8 +36,6 @@ yay -S minnow-bin
 sudo snap install minnow
 ```
 
-**Flatpak:** not available yet, submitted to Flathub and waiting on their review.
-
 **From source:** see Building and Running below.
 
 ## Dependencies
