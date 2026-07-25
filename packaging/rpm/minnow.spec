@@ -27,7 +27,7 @@ surface of a full-featured file manager.
 %autosetup
 
 %build
-%cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+%cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DMINNOW_APP_VERSION=%{version}
 %cmake_build
 
 %install

@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(minnow VERSION 0.1.1 LANGUAGES CXX)
 
+# The one place the app's own version is set for local/dev builds. Release CI overrides
+# this from the pushed tag instead of requiring every packaging manifest to be hand-bumped
+# in lockstep - see MINNOW_APP_VERSION usage in release.yml and the packaging/ build scripts.
+set(MINNOW_APP_VERSION "${PROJECT_VERSION}" CACHE STRING "Application version string reported by the app")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -58,6 +63,7 @@ add_executable(minnow
 )
 
 target_link_libraries(minnow PRIVATE minnow_core)
+target_compile_definitions(minnow PRIVATE MINNOW_VERSION="${MINNOW_APP_VERSION}")
 
 # KIO::FileUndoManager::redo() only exists since KF6 6.17 - older KF6 (still common on e.g.
 # Fedora 40's default repos) only has undo(). Gate the Redo shortcut on it instead of hard

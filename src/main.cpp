@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
     app.setApplicationName(QStringLiteral("minnow"));
     app.setApplicationDisplayName(QStringLiteral("Minnow"));
     app.setOrganizationName(QStringLiteral("minnow"));
-    app.setApplicationVersion(QStringLiteral("0.1.1"));
+    app.setApplicationVersion(QStringLiteral(MINNOW_VERSION));
 
     // Resolve through the installed icon theme (as KDE apps normally do) rather than
     // pushing a raw client pixmap over Wayland - the latter was producing corrupted
