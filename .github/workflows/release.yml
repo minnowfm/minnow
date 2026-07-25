@@ -33,7 +33,19 @@ on:
         default: true
 
 jobs:
+  # Every package format's version string is derived from the pushed tag here, instead of
+  # requiring CMakeLists.txt, the RPM spec, the deb changelog, snapcraft.yaml, and the
+  # Flatpak manifest to all be hand-bumped in lockstep before tagging a release.
+  compute-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
   build-arch-binary:
+    needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_arch }}
     runs-on: ubuntu-24.04
     container: archlinux:latest
@@ -41,11 +53,12 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules \
-            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio git
+            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio kfilemetadata git
       - uses: actions/checkout@v4
       - name: Build and install to a staging root
         run: |
-          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF \
+            -DMINNOW_APP_VERSION="${{ needs.compute-version.outputs.version }}"
           cmake --build build -j"$(nproc)"
           DESTDIR="$PWD/pkgroot" cmake --install build
       - name: Create binary tarball
@@ -58,6 +71,7 @@ jobs:
           path: minnow-*-x86_64.tar.gz
 
   build-deb:
+    needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_deb }}
     runs-on: ubuntu-24.04
     # .deb is Debian's native format - build on actual Debian rather than Ubuntu. Trixie
@@ -70,16 +84,20 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential cmake extra-cmake-modules qt6-base-dev \
             libkf6coreaddons-dev libkf6configwidgets-dev libkf6widgetsaddons-dev libkf6kio-dev \
+            libkf6filemetadata-dev \
             debhelper devscripts fakeroot git
       - uses: actions/checkout@v4
       - name: Build .deb
         run: packaging/deb/build.sh
+        env:
+          VERSION: ${{ needs.compute-version.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
           name: deb-package
           path: dist/*.deb
 
   build-rpm:
+    needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_rpm }}
     runs-on: ubuntu-24.04
     container: fedora:40
@@ -88,16 +106,19 @@ jobs:
         run: |
           dnf install -y rpm-build cmake gcc-c++ extra-cmake-modules git tar \
             qt6-qtbase-devel kf6-kcoreaddons-devel kf6-kconfigwidgets-devel \
-            kf6-kwidgetsaddons-devel kf6-kio-devel
+            kf6-kwidgetsaddons-devel kf6-kio-devel kf6-kfilemetadata-devel
       - uses: actions/checkout@v4
       - name: Build .rpm
         run: packaging/rpm/build.sh
+        env:
+          VERSION: ${{ needs.compute-version.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
           name: rpm-package
           path: dist/*.rpm
 
   build-snap:
+    needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_snap }}
     runs-on: ubuntu-24.04
     # `secrets` isn't a recognized context inside a step's `if:` directly - routing it
@@ -106,6 +127,10 @@ jobs:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
     steps:
       - uses: actions/checkout@v4
+      - name: Set package version
+        run: |
+          sed -i "s/^version: .*/version: '${{ needs.compute-version.outputs.version }}'/" packaging/snap/snapcraft.yaml
+          sed -i "s/source-tag: '.*'/source-tag: '${GITHUB_REF_NAME}'/" packaging/snap/snapcraft.yaml
       - uses: snapcore/action-build@v1
         id: build
         with:
@@ -124,6 +149,7 @@ jobs:
           release: stable
 
   build-flatpak:
+    needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_flatpak }}
     runs-on: ubuntu-24.04
     container:
@@ -131,6 +157,9 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@v4
+      - name: Set source tag
+        run: |
+          sed -i "s/tag: v.*/tag: ${GITHUB_REF_NAME}/" packaging/flatpak/io.github.minnowfm.Minnow.yaml
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: minnow.flatpak

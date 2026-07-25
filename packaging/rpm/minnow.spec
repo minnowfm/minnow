@@ -15,6 +15,7 @@ BuildRequires:  kf6-kcoreaddons-devel
 BuildRequires:  kf6-kconfigwidgets-devel
 BuildRequires:  kf6-kwidgetsaddons-devel
 BuildRequires:  kf6-kio-devel
+BuildRequires:  kf6-kfilemetadata-devel
 
 %description
 Minnow is a small, KIO-based file browser built as a lighter alternative
@@ -26,7 +27,7 @@ surface of a full-featured file manager.
 %autosetup
 
 %build
-%cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+%cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DMINNOW_APP_VERSION=%{version}
 %cmake_build
 
 %install
@@ -36,6 +37,13 @@ surface of a full-featured file manager.
 %{_bindir}/minnow
 %{_datadir}/applications/io.github.minnowfm.Minnow.desktop
 %{_datadir}/icons/hicolor/scalable/apps/io.github.minnowfm.Minnow.svg
+%{_datadir}/icons/hicolor/16x16/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/22x22/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/24x24/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/32x32/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/48x48/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/64x64/apps/io.github.minnowfm.Minnow.png
+%{_datadir}/icons/hicolor/128x128/apps/io.github.minnowfm.Minnow.png
 %{_datadir}/metainfo/io.github.minnowfm.Minnow.metainfo.xml
 
 %changelog

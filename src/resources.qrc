@@ -1,5 +1,12 @@
 <RCC>
     <qresource prefix="/">
         <file alias="icons/minnow.svg">../data/icons/io.github.minnowfm.Minnow.svg</file>
+        <file alias="icons/minnow-16.png">../data/icons/hicolor/16x16/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-22.png">../data/icons/hicolor/22x22/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-24.png">../data/icons/hicolor/24x24/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-32.png">../data/icons/hicolor/32x32/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-48.png">../data/icons/hicolor/48x48/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-64.png">../data/icons/hicolor/64x64/apps/io.github.minnowfm.Minnow.png</file>
+        <file alias="icons/minnow-128.png">../data/icons/hicolor/128x128/apps/io.github.minnowfm.Minnow.png</file>
     </qresource>
 </RCC>

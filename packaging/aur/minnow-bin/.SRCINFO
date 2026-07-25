@@ -10,6 +10,7 @@ pkgbase = minnow-bin
 	depends = kconfigwidgets
 	depends = kwidgetsaddons
 	depends = kio
+	depends = kfilemetadata
 	provides = minnow
 	conflicts = minnow
 	source = minnow-bin-0.1.1.tar.gz::https://github.com/minnowfm/minnow/releases/download/v0.1.1/minnow-v0.1.1-x86_64.tar.gz

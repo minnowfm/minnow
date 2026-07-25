@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(minnow VERSION 0.1.1 LANGUAGES CXX)
 
+# The one place the app's own version is set for local/dev builds. Release CI overrides
+# this from the pushed tag instead of requiring every packaging manifest to be hand-bumped
+# in lockstep - see MINNOW_APP_VERSION usage in release.yml and the packaging/ build scripts.
+set(MINNOW_APP_VERSION "${PROJECT_VERSION}" CACHE STRING "Application version string reported by the app")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -14,12 +19,15 @@ find_package(KF6CoreAddons REQUIRED)
 find_package(KF6ConfigWidgets REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
 find_package(KF6KIO REQUIRED)
+find_package(KF6FileMetaData REQUIRED)
 
 add_library(minnow_core STATIC
     src/PathUtils.cpp
     src/PathUtils.h
     src/FileOperations.cpp
     src/FileOperations.h
+    src/PropertiesDialog.cpp
+    src/PropertiesDialog.h
 )
 
 target_link_libraries(minnow_core PUBLIC
@@ -31,6 +39,7 @@ target_link_libraries(minnow_core PUBLIC
     KF6::KIOWidgets
     KF6::KIOFileWidgets
     KF6::KIOGui
+    KF6::FileMetaData
 )
 target_include_directories(minnow_core PUBLIC src)
 
@@ -46,10 +55,15 @@ add_executable(minnow
     src/PathBar.h
     src/TabBar.cpp
     src/TabBar.h
+    src/ThumbnailProxyModel.cpp
+    src/ThumbnailProxyModel.h
+    src/SettingsTab.cpp
+    src/SettingsTab.h
     src/resources.qrc
 )
 
 target_link_libraries(minnow PRIVATE minnow_core)
+target_compile_definitions(minnow PRIVATE MINNOW_VERSION="${MINNOW_APP_VERSION}")
 
 # KIO::FileUndoManager::redo() only exists since KF6 6.17 - older KF6 (still common on e.g.
 # Fedora 40's default repos) only has undo(). Gate the Redo shortcut on it instead of hard
@@ -62,6 +76,10 @@ install(TARGETS minnow DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/io.github.minnowfm.Minnow.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES data/io.github.minnowfm.Minnow.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES data/icons/io.github.minnowfm.Minnow.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+foreach(_icon_size 16 22 24 32 48 64 128)
+    install(FILES data/icons/hicolor/${_icon_size}x${_icon_size}/apps/io.github.minnowfm.Minnow.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_icon_size}x${_icon_size}/apps)
+endforeach()
 
 option(BUILD_TESTING "Build automated tests" ON)
 if(BUILD_TESTING)

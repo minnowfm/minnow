@@ -14,6 +14,7 @@ class QHBoxLayout;
 class PlacesSidebar;
 class BrowserTab;
 class TabBar;
+class SettingsTab;
 
 class MainWindow : public QMainWindow
 {
@@ -36,6 +37,7 @@ private Q_SLOTS:
     void goForward();
     void goUp();
     void openNewWindow(const QUrl &url);
+    void openSettingsTab();
 
 private:
     void setupToolBar();
@@ -65,6 +67,8 @@ private:
 
     QLabel *m_itemCountLabel = nullptr;
     QLabel *m_freeSpaceLabel = nullptr;
+
+    SettingsTab *m_settingsTab = nullptr;
 
     QUrl m_startUrl;
 };

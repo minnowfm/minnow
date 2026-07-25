@@ -9,6 +9,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QStackedLayout>
+#include <QTimer>
 #include <QToolButton>
 
 PathBar::PathBar(QWidget *parent)
@@ -92,17 +93,24 @@ void PathBar::enterEditMode()
 {
     m_editLine->setText(m_url.toDisplayString(QUrl::PreferLocalFile));
     m_stack->setCurrentWidget(m_editLine);
-    m_editLine->setFocus(Qt::MouseFocusReason);
-    m_editLine->selectAll();
+    // setFocus() right after setCurrentWidget() can be dropped - the line edit isn't
+    // actually mapped/visible yet in the same call, so the request silently fails and
+    // keystrokes keep going wherever focus previously was. Deferring it to the next
+    // event loop iteration (after the widget is actually shown) makes it stick.
+    QTimer::singleShot(0, m_editLine, [this] {
+        m_editLine->setFocus(Qt::MouseFocusReason);
+        m_editLine->selectAll();
+    });
 }
 
 void PathBar::commitEdit()
 {
     const QString text = m_editLine->text().trimmed();
     if (!text.isEmpty()) {
-        const QUrl url = QUrl::fromUserInput(text);
+        const QUrl url = QUrl::fromUserInput(text, m_url.toLocalFile(), QUrl::AssumeLocalFile);
         if (url.isValid()) {
             Q_EMIT urlActivated(url);
+            m_stack->setCurrentWidget(m_breadcrumbWidget);
             return;
         }
     }

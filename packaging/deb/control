@@ -9,7 +9,8 @@ Build-Depends: debhelper-compat (= 13),
                libkf6coreaddons-dev,
                libkf6configwidgets-dev,
                libkf6widgetsaddons-dev,
-               libkf6kio-dev
+               libkf6kio-dev,
+               libkf6filemetadata-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/minnowfm/minnow
 Rules-Requires-Root: no

@@ -6,13 +6,23 @@
 
 class QListView;
 class QTreeView;
+class QTreeWidget;
+class QTreeWidgetItem;
 class QStackedWidget;
 class QAbstractItemView;
+class QTimer;
 class KDirLister;
 class KDirModel;
-class KDirSortFilterProxyModel;
+class KFileItem;
+class ThumbnailProxyModel;
 class PathBar;
 class PlacesSidebar;
+
+namespace KIO
+{
+class ListJob;
+class Job;
+}
 
 // One browsing context: its own directory listing/model, grid+list views,
 // breadcrumb path bar, and back/forward/up history. MainWindow hosts several of
@@ -46,6 +56,11 @@ public:
     void activateCurrentItem();
     int itemCount() const;
 
+    bool showHiddenFiles() const { return m_showHiddenFiles; }
+    void setShowHiddenFiles(bool show);
+    bool showThumbnails() const { return m_showThumbnails; }
+    void setShowThumbnails(bool show);
+
 signals:
     void urlChanged(const QUrl &url);
     void historyChanged();
@@ -73,6 +88,11 @@ private:
     void saveFolderSort(const QString &folderKey, int column, Qt::SortOrder order);
     void loadFolderViewModes();
     void saveFolderViewModes();
+    void requestThumbnails(const QList<KFileItem> &items);
+    void startSearch();
+    void stopSearch();
+    void activateSearchResult(QTreeWidgetItem *item);
+    bool searchActive() const { return !m_filterText.isEmpty(); }
 
     PlacesSidebar *m_sidebar = nullptr;
     PathBar *m_pathBar = nullptr;
@@ -82,12 +102,20 @@ private:
 
     KDirLister *m_dirLister = nullptr;
     KDirModel *m_dirModel = nullptr;
-    KDirSortFilterProxyModel *m_proxyModel = nullptr;
+    ThumbnailProxyModel *m_proxyModel = nullptr;
 
     QUrl m_currentUrl;
     QList<QUrl> m_history;
     int m_historyIndex = -1;
     QString m_filterText;
+    bool m_showHiddenFiles = false;
+    bool m_showThumbnails = true;
+
+    QTreeWidget *m_searchResultsView = nullptr;
+    QTreeWidgetItem *m_searchHereSection = nullptr;
+    QTreeWidgetItem *m_searchSubfoldersSection = nullptr;
+    KIO::ListJob *m_searchJob = nullptr;
+    QTimer *m_searchDebounceTimer = nullptr;
 
     struct FolderSort {
         int column = 0;
