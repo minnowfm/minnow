@@ -42,17 +42,36 @@ cmake --build build -j"$(nproc)"
 
 ## Installing
 
+**Arch Linux (AUR):**
+
+```sh
+yay -S minnow        # builds from source
+# or
+yay -S minnow-bin    # prebuilt binary
+```
+
+**Snap (any distro with snapd):**
+
+```sh
+sudo snap install minnow
+```
+Also listed on the [Snap Store](https://snapcraft.io/minnow).
+
+**From source (any distro):**
+
 ```sh
 cmake --install build --prefix /usr/local
 ```
 
 This installs the `minnow` binary, a `.desktop` file, an icon, and an AppStream metainfo file to the standard FHS locations (`bin`, `share/applications`, `share/icons/hicolor/scalable/apps`, `share/metainfo`).
 
+See [Packaging](#packaging) below for `.deb`/`.rpm`/Flatpak.
+
 ## Packaging
 
-Packaging manifests/scripts live under `packaging/`, one subdirectory per format. All of them
-currently point at the `v0.1.1` release tag; bump this alongside `CMakeLists.txt`'s version
-when cutting a new one.
+Packaging manifests/scripts live under `packaging/`, one subdirectory per format. None of them
+need a manual version bump before tagging a release - the release workflow derives the version
+from the pushed tag and threads it through every build (see Automated builds below).
 
 ### Automated builds
 
