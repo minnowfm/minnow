@@ -89,8 +89,10 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
-    loadSectionOrder();
+    // loadPinned() has to run first - loadSectionOrder() needs m_pinned populated to
+    // detect and migrate a legacy custom section that collides with a fixed section name.
     loadPinned();
+    loadSectionOrder();
     refreshDrives();
 
     // Picks up newly mounted network shares (NFS/SMB/etc. mounted outside the app, e.g.
@@ -122,7 +124,7 @@ QListWidgetItem *PlacesSidebar::addPlaceItem(const QString &label, const QString
 QListWidgetItem *PlacesSidebar::addHeaderItem(const QString &title, bool reorderable)
 {
     auto *item = new QListWidgetItem(title.toUpper());
-    item->setFlags(reorderable ? (Qt::ItemIsEnabled | Qt::ItemIsDragEnabled) : Qt::NoItemFlags);
+    item->setFlags(reorderable ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsDragEnabled) : Qt::NoItemFlags);
     item->setData(HeaderRole, true);
     item->setData(HeaderNameRole, title);
     QFont headerFont = font();
@@ -403,6 +405,30 @@ void PlacesSidebar::loadSectionOrder()
     // right after, Devices/Network last) rather than just appending, so an existing
     // config's visual order doesn't jump around on first load after this change.
     m_sectionOrder = settings.value(QStringLiteral("CustomSections")).toStringList();
+
+    // "Network" only became a reserved fixed-section name in this version - a pre-existing
+    // config could have a user-created custom section by that exact name. Without this,
+    // its bookmarks would silently stop rendering (the position now takes the fixed
+    // network-mounts branch in rebuildAll() instead of the generic custom-section one) and
+    // the section could no longer be deleted. Rename the legacy one out of the way first.
+    if (m_sectionOrder.contains(kNetworkHeader)) {
+        bool hasLegacyPins = false;
+        for (const auto &pinned : m_pinned) {
+            if (pinned.section == kNetworkHeader) {
+                hasLegacyPins = true;
+                break;
+            }
+        }
+        if (hasLegacyPins) {
+            const QString migratedName = QStringLiteral("Network (Bookmarks)");
+            m_sectionOrder[m_sectionOrder.indexOf(kNetworkHeader)] = migratedName;
+            for (auto &pinned : m_pinned) {
+                if (pinned.section == kNetworkHeader)
+                    pinned.section = migratedName;
+            }
+            savePinned();
+        }
+    }
 
     if (!m_sectionOrder.contains(kPlacesHeader))
         m_sectionOrder.prepend(kPlacesHeader);

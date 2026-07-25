@@ -514,6 +514,7 @@ void BrowserTab::setFilterText(const QString &text)
     if (searchActive()) {
         m_searchDebounceTimer->start(400);
     } else if (wasActive) {
+        m_searchDebounceTimer->stop();
         stopSearch();
         applyViewModeForCurrentFolder();
     }
@@ -562,6 +563,20 @@ void BrowserTab::startSearch()
                 continue;
             if (!name.contains(query, Qt::CaseInsensitive))
                 continue;
+            if (!m_showHiddenFiles) {
+                // For a nested match, name can be a relative path (e.g. ".config/foo") -
+                // check every segment, not just the basename, so files under a hidden
+                // directory are excluded too, matching the normal folder view.
+                bool hidden = false;
+                for (const QString &segment : name.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
+                    if (segment.startsWith(QLatin1Char('.'))) {
+                        hidden = true;
+                        break;
+                    }
+                }
+                if (hidden)
+                    continue;
+            }
 
             const KFileItem item(entry, dirUrl, true, true);
             // Decide the section from the item's own resolved parent directory rather than
@@ -650,6 +665,11 @@ void BrowserTab::requestThumbnails(const QList<KFileItem> &items)
     static const QStringList enabledPlugins = KIO::PreviewJob::availablePlugins();
     KIO::PreviewJob *job = KIO::filePreview(fileItems, QSize(128, 128), &enabledPlugins);
     connect(job, &KIO::PreviewJob::gotPreview, m_proxyModel, [this](const KFileItem &item, const QPixmap &preview) {
+        // Thumbnails can be disabled while this job is still in flight - without this
+        // check, previews already in the pipe would keep landing after clearThumbnails()
+        // ran, making the toggle look like it didn't do anything.
+        if (!m_showThumbnails)
+            return;
         m_proxyModel->setThumbnail(item.url(), QIcon(preview));
     });
 }
