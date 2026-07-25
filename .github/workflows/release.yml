@@ -1,6 +1,6 @@
 name: Release packages
 
-# Builds .deb, .rpm, a Snap, a Flatpak bundle, an Arch binary tarball (for AUR minnow-bin),
+# Builds .deb, .rpm, a Snap, an Arch binary tarball (for AUR minnow-bin),
 # and a source tarball (for AUR minnow), then attaches all of them to a GitHub Release.
 #
 # Triggers on pushing a tag like v0.1.0. Can also be run manually (workflow_dispatch) against
@@ -27,10 +27,6 @@ on:
         description: 'Build Snap'
         type: boolean
         default: true
-      run_flatpak:
-        description: 'Build Flatpak'
-        type: boolean
-        default: true
       run_aur:
         description: 'Publish to AUR'
         type: boolean
@@ -38,8 +34,8 @@ on:
 
 jobs:
   # Every package format's version string is derived from the pushed tag here, instead of
-  # requiring CMakeLists.txt, the RPM spec, the deb changelog, snapcraft.yaml, and the
-  # Flatpak manifest to all be hand-bumped in lockstep before tagging a release.
+  # requiring CMakeLists.txt, the RPM spec, the deb changelog, and snapcraft.yaml to all be
+  # hand-bumped in lockstep before tagging a release.
   compute-version:
     runs-on: ubuntu-24.04
     outputs:
@@ -152,26 +148,8 @@ jobs:
           snap: ${{ steps.build.outputs.snap }}
           release: stable
 
-  build-flatpak:
-    needs: compute-version
-    if: ${{ github.event_name == 'push' || inputs.run_flatpak }}
-    runs-on: ubuntu-24.04
-    container:
-      image: bilelmoussaoui/flatpak-github-actions:kde-6.7
-      options: --privileged
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set source tag
-        run: |
-          sed -i "s/tag: v.*/tag: ${GITHUB_REF_NAME}/" packaging/flatpak/io.github.minnowfm.Minnow.yaml
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: minnow.flatpak
-          manifest-path: packaging/flatpak/io.github.minnowfm.Minnow.yaml
-          cache-key: flatpak-builder-${{ github.sha }}
-
   create-release:
-    needs: [build-arch-binary, build-deb, build-rpm, build-snap, build-flatpak]
+    needs: [build-arch-binary, build-deb, build-rpm, build-snap]
     runs-on: ubuntu-24.04
     # The default GITHUB_TOKEN is read-only unless explicitly granted write access here -
     # this avoids needing to change the repo-wide Actions token permission default.
@@ -190,7 +168,7 @@ jobs:
           cp minnow-*-src.tar.gz release-files/
           # Excludes rpmbuild's auto-generated debuginfo/debugsource/src.rpm sub-packages
           # and debhelper's auto-generated dbgsym .deb - just the installable packages.
-          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.flatpak' -o -name '*.tar.gz' \) \
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.tar.gz' \) \
             ! -name '*dbgsym*' ! -name '*debuginfo*' ! -name '*debugsource*' ! -name '*.src.rpm' \
             -exec cp {} release-files/ \;
           ls -la release-files/
