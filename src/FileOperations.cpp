@@ -442,6 +442,8 @@ bool isArchive(const QUrl &url)
 {
     if (!url.isLocalFile())
         return false;
+    if (!QFileInfo(url.toLocalFile()).isFile())
+        return false;
     const QString name = url.fileName().toLower();
     for (const QString &suffix : archiveSuffixes()) {
         if (name.endsWith(suffix))
@@ -464,6 +466,18 @@ void compressToArchive(const QList<QUrl> &sources, QWidget *parent)
     const QString dirPath = parentOf(sources.first()).toLocalFile();
     const QString baseName = sources.size() == 1 ? sources.first().fileName() : QObject::tr("Archive");
     const QString destPath = uniqueFilePath(dirPath, baseName, QStringLiteral(".zip"));
+
+    // Reserved synchronously, right after picking the name, rather than leaving actual file
+    // creation to the worker thread - otherwise a second compress triggered before the first
+    // worker gets around to opening its output would compute the same "unique" name (the real
+    // file doesn't exist yet as far as uniqueFilePath() can see) and both would write to it
+    // concurrently.
+    QFile reservation(destPath);
+    if (!reservation.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(parent, QObject::tr("Compress"), QObject::tr("Could not create \"%1\".").arg(destPath));
+        return;
+    }
+    reservation.close();
 
     // KArchive's API is synchronous, so running it directly on the GUI thread would freeze
     // the whole window for any selection large enough to take more than an instant (this is
