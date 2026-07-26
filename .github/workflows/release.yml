@@ -189,7 +189,11 @@ jobs:
       contents: write
     steps:
       - name: Install tools
-        run: pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib
+          # makepkg/updpkgsums refuse to run as root (the container's default user), so
+          # checksum generation below needs an unprivileged user to run as instead.
+          useradd -m builder
       - uses: actions/checkout@v4
       - name: Set up AUR SSH access
         env:
@@ -209,9 +213,10 @@ jobs:
       - name: Bump PKGBUILD versions and checksums
         run: |
           VERSION="${{ needs.compute-version.outputs.version }}"
+          chown -R builder:builder "$GITHUB_WORKSPACE"
           for pkg in minnow minnow-bin; do
             sed -i "s/^pkgver=.*/pkgver=$VERSION/; s/^pkgrel=.*/pkgrel=1/" packaging/aur/$pkg/PKGBUILD
-            (cd packaging/aur/$pkg && updpkgsums && makepkg --printsrcinfo > .SRCINFO)
+            su builder -c "cd '$GITHUB_WORKSPACE/packaging/aur/$pkg' && updpkgsums && makepkg --printsrcinfo > .SRCINFO"
           done
       - name: Push to AUR
         run: |
