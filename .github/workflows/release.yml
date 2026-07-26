@@ -202,11 +202,16 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          # ssh-keyscan alone isn't reliable here (silently produced an empty/unusable
+          # known_hosts entry, failing every push with "Host key verification failed") -
+          # accept-new pins whatever key is offered on first connect instead of requiring a
+          # pre-populated known_hosts, which is an acceptable tradeoff for this single,
+          # well-known deploy target.
           cat > ~/.ssh/config <<'EOF'
           Host aur.archlinux.org
             IdentityFile ~/.ssh/aur
             User aur
+            StrictHostKeyChecking accept-new
           EOF
           git config --global user.name "Minnow release bot"
           git config --global user.email "noreply@example.com"
