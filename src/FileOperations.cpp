@@ -34,6 +34,7 @@
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QMimeData>
+#include <QPointer>
 #include <QProcess>
 #include <QPushButton>
 #include <QSettings>
@@ -119,6 +120,17 @@ bool addPathRecursive(KArchive &archive, const QString &absolutePath, const QStr
                       int taskId, QString *error)
 {
     const QFileInfo info(absolutePath);
+    // Checked before isDir() specifically because isDir() follows symlinks - without this, a
+    // symlink to a directory gets recursed into as if it were a real subdirectory, which for a
+    // link to an ancestor directory recurses forever, and for a link elsewhere pulls in content
+    // outside the selected tree. Store the link itself instead of following it.
+    if (info.isSymLink()) {
+        if (!archive.writeSymLink(destPath, info.symLinkTarget())) {
+            *error = QObject::tr("Could not add link \"%1\" to the archive.").arg(destPath);
+            return false;
+        }
+        return true;
+    }
     if (info.isDir()) {
         if (!archive.writeDir(destPath)) {
             *error = QObject::tr("Could not add folder \"%1\" to the archive.").arg(destPath);
@@ -442,14 +454,22 @@ void compressToArchive(const QList<QUrl> &sources, QWidget *parent)
     // exactly what happened before this fix - a multi-item compress made Minnow "Not
     // Responding"). QtConcurrent::run moves the actual I/O to a worker thread; the
     // QFutureWatcher marshals the result back for the error dialog, if any.
+    //
+    // The watcher (and its finished connection) is parented/anchored to TaskManager - which
+    // outlives every tab/window - rather than to `parent` (the tab that started this). If it
+    // were tied to the tab, closing that tab mid-operation would destroy the watcher, the
+    // connection would never fire, and finishTask() would never run: the task would stay
+    // "active" forever and block the whole app from closing. `parent` is still used for the
+    // error dialog, but only through a QPointer so a since-destroyed tab doesn't dangle.
     const int taskId = TaskManager::self()->startTask(QObject::tr("Compressing %n item(s)", "", sources.size()));
+    const QPointer<QWidget> safeParent(parent);
 
-    auto *watcher = new QFutureWatcher<QString>(parent);
-    QObject::connect(watcher, &QFutureWatcher<QString>::finished, parent, [watcher, destPath, parent, taskId] {
+    auto *watcher = new QFutureWatcher<QString>(TaskManager::self());
+    QObject::connect(watcher, &QFutureWatcher<QString>::finished, watcher, [watcher, destPath, safeParent, taskId] {
         const QString error = watcher->result();
         TaskManager::self()->finishTask(taskId, !error.isEmpty());
         if (!error.isEmpty()) {
-            QMessageBox::warning(parent, QObject::tr("Compress"), error);
+            QMessageBox::warning(safeParent, QObject::tr("Compress"), error);
             QFile::remove(destPath);
         }
         watcher->deleteLater();
@@ -472,7 +492,8 @@ void compressToArchive(const QList<QUrl> &sources, QWidget *parent)
                 return error;
             }
         }
-        zip.close();
+        if (!zip.close())
+            return QObject::tr("Could not finish writing \"%1\": %2").arg(destPath, zip.errorString());
         return QString();
     });
     watcher->setFuture(future);
@@ -508,15 +529,18 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
     const bool isZip = lowerName.endsWith(QStringLiteral(".zip"));
 
     // Same reasoning as compressToArchive(): KArchive is synchronous, so the actual
-    // open/copyTo work happens on a worker thread instead of blocking the GUI thread.
+    // open/copyTo work happens on a worker thread instead of blocking the GUI thread, and the
+    // watcher is anchored to TaskManager (not `parent`) for the same reason - so closing the
+    // initiating tab mid-extraction can't leave the task stuck "active" forever.
     const int taskId = TaskManager::self()->startTask(QObject::tr("Extracting \"%1\"").arg(fileName));
+    const QPointer<QWidget> safeParent(parent);
 
-    auto *watcher = new QFutureWatcher<QString>(parent);
-    QObject::connect(watcher, &QFutureWatcher<QString>::finished, parent, [watcher, fileName, parent, taskId] {
+    auto *watcher = new QFutureWatcher<QString>(TaskManager::self());
+    QObject::connect(watcher, &QFutureWatcher<QString>::finished, watcher, [watcher, fileName, safeParent, taskId] {
         const QString error = watcher->result();
         TaskManager::self()->finishTask(taskId, !error.isEmpty());
         if (!error.isEmpty())
-            QMessageBox::warning(parent, QObject::tr("Extract"), error);
+            QMessageBox::warning(safeParent, QObject::tr("Extract"), error);
         watcher->deleteLater();
     });
 

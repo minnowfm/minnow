@@ -120,7 +120,12 @@ void TaskListWidget::rebuild()
         dismissButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
         dismissButton->setAutoRaise(true);
         dismissButton->setFixedSize(20, 20);
-        dismissButton->setToolTip(tr("Remove from history"));
+        // Only finished tasks can be dismissed - removeTask() only erases the visible entry,
+        // not the underlying job/work, so dismissing an active one would make it invisible to
+        // hasActiveTasks() and let the app close (or the window "finish closing") while it's
+        // still actually running.
+        dismissButton->setEnabled(task.finished);
+        dismissButton->setToolTip(task.finished ? tr("Remove from history") : tr("Still running"));
         const int taskId = task.id;
         connect(dismissButton, &QToolButton::clicked, this, [taskId] { TaskManager::self()->removeTask(taskId); });
 
