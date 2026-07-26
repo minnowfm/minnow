@@ -224,6 +224,12 @@ jobs:
             su builder -c "cd '$GITHUB_WORKSPACE/packaging/aur/$pkg' && updpkgsums && makepkg --printsrcinfo > .SRCINFO"
           done
       - name: Push to AUR
+        env:
+          # Belt-and-suspenders alongside the ssh_config Host block: forces the exact key and
+          # host-check behavior for every git-over-ssh call this step makes, regardless of
+          # whether ~/.ssh/config actually got picked up (it demonstrably wasn't - the "Host
+          # key verification failed" error persisted even after adding accept-new there).
+          GIT_SSH_COMMAND: ssh -i /root/.ssh/aur -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts
         run: |
           for pkg in minnow minnow-bin; do
             git clone "ssh://aur@aur.archlinux.org/$pkg.git" "/tmp/aur-$pkg"
