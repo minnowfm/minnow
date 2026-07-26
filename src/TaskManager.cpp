@@ -45,8 +45,23 @@ int TaskManager::addTask(const QString &description)
     task.description = description;
     task.elapsed.start();
     m_tasks.prepend(task);
-    while (m_tasks.size() > kMaxTasks)
-        m_tasks.removeLast();
+
+    // Trim from the tail, but only ever evict finished tasks - the cap exists to stop the
+    // completed-history list from growing unbounded, not to lose track of something still
+    // running just because it happens to be the oldest entry.
+    while (m_tasks.size() > kMaxTasks) {
+        int indexToRemove = -1;
+        for (int i = m_tasks.size() - 1; i >= 0; --i) {
+            if (m_tasks.at(i).finished) {
+                indexToRemove = i;
+                break;
+            }
+        }
+        if (indexToRemove < 0)
+            break;
+        m_tasks.removeAt(indexToRemove);
+    }
+
     Q_EMIT tasksChanged();
     return task.id;
 }
@@ -100,6 +115,11 @@ void TaskManager::removeTask(int id)
 {
     for (int i = 0; i < m_tasks.size(); ++i) {
         if (m_tasks.at(i).id == id) {
+            // Guarded here (not just by disabling the dismiss button in the UI) so this stays
+            // safe regardless of caller - dismissing an active task would erase its only
+            // record, making hasActiveTasks() blind to work that's still actually running.
+            if (!m_tasks.at(i).finished)
+                return;
             m_tasks.removeAt(i);
             Q_EMIT tasksChanged();
             return;

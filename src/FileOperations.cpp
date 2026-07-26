@@ -41,7 +41,10 @@
 #include <QStandardPaths>
 #include <QtConcurrentRun>
 
+#include <climits>
 #include <memory>
+
+#include <unistd.h>
 
 namespace
 {
@@ -99,6 +102,19 @@ void reportProgress(int taskId, qint64 bytesDone, qint64 totalBytes)
                                Qt::QueuedConnection);
 }
 
+// QFileInfo::symLinkTarget() resolves to an absolute path, losing a relative link's actual
+// (portable) target and leaking this machine's directory layout into the archive. readlink()
+// returns the link's raw, unresolved contents instead.
+QString rawSymLinkTarget(const QString &path)
+{
+    const QByteArray encoded = QFile::encodeName(path);
+    char buffer[PATH_MAX];
+    const ssize_t length = ::readlink(encoded.constData(), buffer, sizeof(buffer) - 1);
+    if (length < 0)
+        return QFileInfo(path).symLinkTarget(); // fallback, shouldn't normally happen
+    return QFile::decodeName(QByteArray(buffer, length));
+}
+
 qint64 localSizeRecursive(const QString &path)
 {
     const QFileInfo info(path);
@@ -125,7 +141,7 @@ bool addPathRecursive(KArchive &archive, const QString &absolutePath, const QStr
     // link to an ancestor directory recurses forever, and for a link elsewhere pulls in content
     // outside the selected tree. Store the link itself instead of following it.
     if (info.isSymLink()) {
-        if (!archive.writeSymLink(destPath, info.symLinkTarget())) {
+        if (!archive.writeSymLink(destPath, rawSymLinkTarget(absolutePath))) {
             *error = QObject::tr("Could not add link \"%1\" to the archive.").arg(destPath);
             return false;
         }
@@ -536,11 +552,19 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
     const QPointer<QWidget> safeParent(parent);
 
     auto *watcher = new QFutureWatcher<QString>(TaskManager::self());
-    QObject::connect(watcher, &QFutureWatcher<QString>::finished, watcher, [watcher, fileName, safeParent, taskId] {
+    QObject::connect(watcher, &QFutureWatcher<QString>::finished, watcher, [watcher, fileName, destPath, safeParent, taskId] {
         const QString error = watcher->result();
         TaskManager::self()->finishTask(taskId, !error.isEmpty());
-        if (!error.isEmpty())
+        if (!error.isEmpty()) {
+            // destPath is a fresh, uniquely-named directory created just for this extraction -
+            // on failure (archive wouldn't open, or extraction stopped partway), remove
+            // whatever got written instead of leaving a partial tree that a retry can't tell
+            // apart from a real one (it just gets its own "(2)" suffix instead of overwriting).
+            // Done before the (modal) warning dialog so cleanup isn't gated on the user
+            // noticing and dismissing it.
+            QDir(destPath).removeRecursively();
             QMessageBox::warning(safeParent, QObject::tr("Extract"), error);
+        }
         watcher->deleteLater();
     });
 
