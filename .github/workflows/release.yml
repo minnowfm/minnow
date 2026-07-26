@@ -199,22 +199,11 @@ jobs:
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          # ssh-keyscan alone isn't reliable here (silently produced an empty/unusable
-          # known_hosts entry, failing every push with "Host key verification failed") -
-          # accept-new pins whatever key is offered on first connect instead of requiring a
-          # pre-populated known_hosts, which is an acceptable tradeoff for this single,
-          # well-known deploy target.
-          cat > ~/.ssh/config <<'EOF'
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur
-            User aur
-            StrictHostKeyChecking accept-new
-          EOF
-          git config --global user.name "Minnow release bot"
-          git config --global user.email "noreply@example.com"
+          # Written to a fixed /tmp path rather than ~/.ssh - container jobs run steps with
+          # HOME pointed at a GitHub-managed directory, not /root, so "~" here silently
+          # resolved to somewhere the later steps didn't agree on (identity file "not found").
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /tmp/aur_ssh_key
+          chmod 600 /tmp/aur_ssh_key
       - name: Bump PKGBUILD versions and checksums
         run: |
           VERSION="${{ needs.compute-version.outputs.version }}"
@@ -225,18 +214,18 @@ jobs:
           done
       - name: Push to AUR
         env:
-          # Belt-and-suspenders alongside the ssh_config Host block: forces the exact key and
-          # host-check behavior for every git-over-ssh call this step makes, regardless of
-          # whether ~/.ssh/config actually got picked up (it demonstrably wasn't - the "Host
-          # key verification failed" error persisted even after adding accept-new there).
-          GIT_SSH_COMMAND: ssh -i /root/.ssh/aur -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts
+          GIT_SSH_COMMAND: ssh -i /tmp/aur_ssh_key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/aur_known_hosts
         run: |
           for pkg in minnow minnow-bin; do
             git clone "ssh://aur@aur.archlinux.org/$pkg.git" "/tmp/aur-$pkg"
             cp packaging/aur/$pkg/PKGBUILD packaging/aur/$pkg/.SRCINFO "/tmp/aur-$pkg/"
             cd "/tmp/aur-$pkg"
             git add PKGBUILD .SRCINFO
-            git commit -m "Update to ${{ needs.compute-version.outputs.version }}" || { echo "no changes for $pkg"; cd -; continue; }
+            # Identity passed explicitly (not via `git config --global`) for the same reason
+            # the SSH key moved to a fixed path - a global ~/.gitconfig depends on the same
+            # unreliable HOME resolution in this container.
+            git -c user.name="Minnow release bot" -c user.email="noreply@example.com" \
+              commit -m "Update to ${{ needs.compute-version.outputs.version }}" || { echo "no changes for $pkg"; cd -; continue; }
             git push origin master
             cd -
           done
@@ -252,5 +241,6 @@ jobs:
           done
           cd /tmp/main-worktree
           git add packaging/aur/*/PKGBUILD packaging/aur/*/.SRCINFO
-          git commit -m "Update AUR packages to ${{ needs.compute-version.outputs.version }}" || { echo "no changes to commit"; exit 0; }
+          git -c user.name="Minnow release bot" -c user.email="noreply@example.com" \
+            commit -m "Update AUR packages to ${{ needs.compute-version.outputs.version }}" || { echo "no changes to commit"; exit 0; }
           git push origin HEAD:main
