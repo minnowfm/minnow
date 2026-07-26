@@ -14,12 +14,14 @@ set(CMAKE_AUTORCC ON)
 
 include(GNUInstallDirs)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 find_package(KF6CoreAddons REQUIRED)
 find_package(KF6ConfigWidgets REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
 find_package(KF6KIO REQUIRED)
 find_package(KF6FileMetaData REQUIRED)
+find_package(KF6Archive REQUIRED)
+find_package(KF6Notifications REQUIRED)
 
 add_library(minnow_core STATIC
     src/PathUtils.cpp
@@ -28,10 +30,13 @@ add_library(minnow_core STATIC
     src/FileOperations.h
     src/PropertiesDialog.cpp
     src/PropertiesDialog.h
+    src/TaskManager.cpp
+    src/TaskManager.h
 )
 
 target_link_libraries(minnow_core PUBLIC
     Qt6::Widgets
+    Qt6::Concurrent
     KF6::CoreAddons
     KF6::ConfigWidgets
     KF6::WidgetsAddons
@@ -40,6 +45,8 @@ target_link_libraries(minnow_core PUBLIC
     KF6::KIOFileWidgets
     KF6::KIOGui
     KF6::FileMetaData
+    KF6::Archive
+    KF6::Notifications
 )
 target_include_directories(minnow_core PUBLIC src)
 
@@ -67,6 +74,14 @@ add_executable(minnow
     src/ThumbnailProxyModel.h
     src/SettingsTab.cpp
     src/SettingsTab.h
+    src/TaskListWidget.cpp
+    src/TaskListWidget.h
+    src/IndeterminateBar.cpp
+    src/IndeterminateBar.h
+    src/TaskProgressPopup.cpp
+    src/TaskProgressPopup.h
+    src/ActivityTab.cpp
+    src/ActivityTab.h
     src/resources.qrc
 )
 

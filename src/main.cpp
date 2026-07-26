@@ -15,6 +15,9 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Minnow"));
     app.setOrganizationName(QStringLiteral("minnow"));
     app.setApplicationVersion(QStringLiteral(MINNOW_VERSION));
+    // Without this, KIO's job-tracking (KUiServerV2JobTracker, used to report copy/move/etc.
+    // progress) warns on every job and can't associate it with this app's window/icon.
+    app.setDesktopFileName(QStringLiteral("io.github.minnowfm.Minnow"));
 
     // Resolve through the installed icon theme (as KDE apps normally do) rather than
     // pushing a raw client pixmap over Wayland - the latter was producing corrupted

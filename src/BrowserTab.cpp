@@ -731,6 +731,30 @@ void BrowserTab::saveFolderSort(const QString &folderKey, int column, Qt::SortOr
     settings.endArray();
 }
 
+void BrowserTab::renameSelectionInteractive()
+{
+    const QList<QUrl> selected = selectedUrls();
+    if (selected.isEmpty())
+        return;
+
+    if (selected.size() == 1) {
+        const QUrl renameUrl = selected.first();
+        const QString oldName = renameUrl.fileName();
+        bool ok = false;
+        const QString newName = QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, oldName, &ok);
+        if (ok && !newName.isEmpty() && newName != oldName)
+            FileOperations::rename(renameUrl, newName, this);
+    } else {
+        bool ok = false;
+        const QString pattern =
+            QInputDialog::getText(this, tr("Bulk Rename"),
+                                   tr("New name (use # for an auto-incrementing number, e.g. \"photo #\"):"),
+                                   QLineEdit::Normal, QStringLiteral("# "), &ok);
+        if (ok && !pattern.isEmpty())
+            FileOperations::batchRename(selected, pattern, QLatin1Char('#'), this);
+    }
+}
+
 void BrowserTab::showViewContextMenu(const QPoint &pos)
 {
     QAbstractItemView *view = currentView();
@@ -784,8 +808,19 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         }
     }
 
+    // Hoisted above the block below (rather than declared with QAction* inline) so the quick
+    // menu built at the end of this function can reuse the same action pointers - a QAction
+    // can be added to more than one QMenu at once, so nothing needs to be built twice.
+    QAction *openAction = nullptr;
+    QAction *cutAction = nullptr;
+    QAction *copyAction = nullptr;
+    QAction *renameAction = nullptr;
+    QAction *trashAction = nullptr;
+    QAction *newFolderAction = nullptr;
+    QAction *terminalAction = nullptr;
+
     if (!selected.isEmpty()) {
-        QAction *openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
+        openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
         connect(openAction, &QAction::triggered, this, [this, selectedItems] {
             // Directories navigate the current tab in place (like double-click) rather than
             // going through FileOperations::openUrl(), which hands local directories off to
@@ -835,47 +870,29 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
 
         menu.addSeparator();
 
-        QAction *cutAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-cut")), tr("Cut"));
-        connect(cutAction, &QAction::triggered, this, [selected] {
-            auto *mime = new QMimeData();
-            mime->setUrls(selected);
-            mime->setData(QStringLiteral("application/x-kde-cutselection"), QByteArrayLiteral("1"));
-            QApplication::clipboard()->setMimeData(mime);
-        });
+        cutAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-cut")), tr("Cut"));
+        connect(cutAction, &QAction::triggered, this, [selected] { FileOperations::cutToClipboard(selected); });
 
-        QAction *copyAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"));
-        connect(copyAction, &QAction::triggered, this, [selected] {
-            auto *mime = new QMimeData();
-            mime->setUrls(selected);
-            QApplication::clipboard()->setMimeData(mime);
-        });
+        copyAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-copy")), tr("Copy"));
+        connect(copyAction, &QAction::triggered, this, [selected] { FileOperations::copyToClipboard(selected); });
 
         menu.addSeparator();
 
-        if (selected.size() == 1) {
-            QAction *renameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")), tr("Rename"));
-            const QUrl renameUrl = selected.first();
-            connect(renameAction, &QAction::triggered, this, [this, renameUrl] {
-                const QString oldName = renameUrl.fileName();
-                bool ok = false;
-                const QString newName =
-                    QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, oldName, &ok);
-                if (ok && !newName.isEmpty() && newName != oldName)
-                    FileOperations::rename(renameUrl, newName, this);
-            });
+        QAction *archiveAction = nullptr;
+        if (selected.size() == 1 && FileOperations::isArchive(selected.first())) {
+            archiveAction = menu.addAction(QIcon::fromTheme(QStringLiteral("archive-extract")), tr("Extract Here"));
+            const QUrl archiveUrl = selected.first();
+            connect(archiveAction, &QAction::triggered, this, [this, archiveUrl] { FileOperations::extractArchive(archiveUrl, this); });
         } else {
-            QAction *bulkRenameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")),
-                                                         tr("Rename %1 Items…").arg(selected.size()));
-            connect(bulkRenameAction, &QAction::triggered, this, [this, selected] {
-                bool ok = false;
-                const QString pattern =
-                    QInputDialog::getText(this, tr("Bulk Rename"),
-                                           tr("New name (use # for an auto-incrementing number, e.g. \"photo #\"):"),
-                                           QLineEdit::Normal, QStringLiteral("# "), &ok);
-                if (ok && !pattern.isEmpty())
-                    FileOperations::batchRename(selected, pattern, QLatin1Char('#'), this);
-            });
+            archiveAction = menu.addAction(QIcon::fromTheme(QStringLiteral("archive-insert")), tr("Compress to Zip"));
+            connect(archiveAction, &QAction::triggered, this, [this, selected] { FileOperations::compressToArchive(selected, this); });
         }
+
+        menu.addSeparator();
+
+        const QString renameLabel = selected.size() == 1 ? tr("Rename") : tr("Rename %1 Items…").arg(selected.size());
+        renameAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")), renameLabel);
+        connect(renameAction, &QAction::triggered, this, &BrowserTab::renameSelectionInteractive);
 
         if (!singleDirItem.isNull()) {
             menu.addSeparator();
@@ -884,7 +901,7 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
 
         menu.addSeparator();
 
-        QAction *trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
+        trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
         connect(trashAction, &QAction::triggered, this, [this, selected] {
             FileOperations::trash(selected, this);
         });
@@ -897,18 +914,12 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         menu.addSeparator();
     }
 
+    QAction *pasteAction = nullptr;
     const QMimeData *clip = QApplication::clipboard()->mimeData();
     if (clip && clip->hasUrls()) {
-        QAction *pasteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-paste")), tr("Paste"));
-        const bool isCut = clip->data(QStringLiteral("application/x-kde-cutselection")) == QByteArrayLiteral("1");
+        pasteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-paste")), tr("Paste"));
         const QUrl destDir = m_currentUrl;
-        const QList<QUrl> urls = clip->urls();
-        connect(pasteAction, &QAction::triggered, this, [this, urls, destDir, isCut] {
-            if (isCut)
-                FileOperations::moveTo(urls, destDir, this);
-            else
-                FileOperations::copyTo(urls, destDir, this);
-        });
+        connect(pasteAction, &QAction::triggered, this, [this, destDir] { FileOperations::pasteClipboard(destDir, this); });
 
         menu.addSeparator();
     }
@@ -1006,7 +1017,7 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         connect(emptyTrashAction, &QAction::triggered, this, [this] { FileOperations::emptyTrash(this); });
         menu.addSeparator();
     } else {
-        QAction *newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
+        newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
         connect(newFolderAction, &QAction::triggered, this, [this] {
             bool ok = false;
             const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal,
@@ -1016,8 +1027,7 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         });
 
         if (m_currentUrl.isLocalFile()) {
-            QAction *terminalAction =
-                menu.addAction(QIcon::fromTheme(QStringLiteral("utilities-terminal")), tr("Open Terminal Here"));
+            terminalAction = menu.addAction(QIcon::fromTheme(QStringLiteral("utilities-terminal")), tr("Open Terminal Here"));
             const QUrl terminalUrl = m_currentUrl;
             connect(terminalAction, &QAction::triggered, this, [terminalUrl] { FileOperations::openTerminal(terminalUrl, nullptr); });
         }
@@ -1053,5 +1063,42 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         FileOperations::showProperties(propertiesItems, this);
     });
 
-    menu.exec(view->viewport()->mapToGlobal(pos));
+    // `menu` above (the "full" menu) has every action a file manager context menu could
+    // plausibly need, which makes it too long to scan at a glance. What actually opens on
+    // right-click is a short "quick" menu with just the common actions plus a Windows
+    // 11-style "Show More Options" entry that reveals the full menu on demand. The quick
+    // menu reuses the very same QAction pointers (a QAction can live in more than one QMenu
+    // at once) instead of rebuilding equivalent actions with duplicated connect() lambdas.
+    QMenu quickMenu(this);
+    if (openAction)
+        quickMenu.addAction(openAction);
+    if (openAction || cutAction || pasteAction)
+        quickMenu.addSeparator();
+    if (cutAction)
+        quickMenu.addAction(cutAction);
+    if (copyAction)
+        quickMenu.addAction(copyAction);
+    if (pasteAction)
+        quickMenu.addAction(pasteAction);
+    if (renameAction)
+        quickMenu.addAction(renameAction);
+    if (cutAction || copyAction || pasteAction || renameAction)
+        quickMenu.addSeparator();
+    if (trashAction)
+        quickMenu.addAction(trashAction);
+    if (newFolderAction)
+        quickMenu.addAction(newFolderAction);
+    if (terminalAction)
+        quickMenu.addAction(terminalAction);
+    if (trashAction || newFolderAction || terminalAction)
+        quickMenu.addSeparator();
+    quickMenu.addAction(propertiesAction);
+    quickMenu.addSeparator();
+
+    QAction *showMoreAction = quickMenu.addAction(tr("Show More Options"));
+    connect(showMoreAction, &QAction::triggered, this, [&menu, view, pos] {
+        menu.exec(view->viewport()->mapToGlobal(pos));
+    });
+
+    quickMenu.exec(view->viewport()->mapToGlobal(pos));
 }
