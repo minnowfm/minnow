@@ -192,8 +192,12 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib
           # makepkg/updpkgsums refuse to run as root (the container's default user), so
-          # checksum generation below needs an unprivileged user to run as instead.
+          # checksum generation below needs an unprivileged user to run as instead - which
+          # then makes root's own later git commands see the checkout as owned by a different
+          # user ("dubious ownership") unless git is told this container is a one-off and
+          # every directory in it can be trusted.
           useradd -m builder
+          git config --global --add safe.directory '*'
       - uses: actions/checkout@v4
       - name: Set up AUR SSH access
         env:
@@ -234,6 +238,7 @@ jobs:
         # safe if main has moved on since - use a separate worktree on main and copy the
         # freshly updated files into it instead.
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch origin main
           git worktree add /tmp/main-worktree origin/main
           for pkg in minnow minnow-bin; do
