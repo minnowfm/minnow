@@ -15,6 +15,7 @@ class PlacesSidebar;
 class BrowserTab;
 class TabBar;
 class SettingsTab;
+class ActivityTab;
 
 class MainWindow : public QMainWindow
 {
@@ -38,6 +39,8 @@ private Q_SLOTS:
     void goUp();
     void openNewWindow(const QUrl &url);
     void openSettingsTab();
+    void openActivityTab();
+    void showTaskPopup();
 
 private:
     void setupToolBar();
@@ -69,6 +72,9 @@ private:
     QLabel *m_freeSpaceLabel = nullptr;
 
     SettingsTab *m_settingsTab = nullptr;
+    ActivityTab *m_activityTab = nullptr;
+    QToolButton *m_tasksButton = nullptr;
+    bool m_waitingForTasksToQuit = false;
 
     QUrl m_startUrl;
 };

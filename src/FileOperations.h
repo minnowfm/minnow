@@ -25,4 +25,12 @@ void openWith(const QList<QUrl> &urls, QWidget *parent);
 void emptyTrash(QWidget *parent);
 void openTerminal(const QUrl &url, QWidget *parent);
 void batchRename(const QList<QUrl> &urls, const QString &newNamePattern, QChar placeHolder, QWidget *parent);
+
+void cutToClipboard(const QList<QUrl> &urls);
+void copyToClipboard(const QList<QUrl> &urls);
+void pasteClipboard(const QUrl &destDir, QWidget *parent);
+
+bool isArchive(const QUrl &url);
+void compressToArchive(const QList<QUrl> &sources, QWidget *parent);
+void extractArchive(const QUrl &archiveUrl, QWidget *parent);
 }

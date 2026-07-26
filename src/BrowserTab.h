@@ -61,6 +61,10 @@ public:
     bool showThumbnails() const { return m_showThumbnails; }
     void setShowThumbnails(bool show);
 
+    // Shared by the context menu and MainWindow's keyboard shortcuts, so both drive the
+    // same single implementation instead of duplicating the selection/dialog logic.
+    void renameSelectionInteractive();
+
 signals:
     void urlChanged(const QUrl &url);
     void historyChanged();

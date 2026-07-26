@@ -1,7 +1,7 @@
 #include "TabBar.h"
 
+#include <QFont>
 #include <QHBoxLayout>
-#include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QStyle>
@@ -24,10 +24,15 @@ TabButton::TabButton(const QString &text, QWidget *parent)
 
     auto *closeButton = new QToolButton(this);
     closeButton->setObjectName(QStringLiteral("tabCloseButton"));
-    closeButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
+    // A plain text glyph rather than a theme icon - some icon themes draw "window-close" as an
+    // X-in-a-circle, which reads badly at this size (especially in dark color schemes). Text
+    // also automatically follows the palette's text color in both light and dark themes.
+    closeButton->setText(QStringLiteral("✕"));
+    QFont closeFont = closeButton->font();
+    closeFont.setPointSize(closeFont.pointSize() + 1);
+    closeButton->setFont(closeFont);
     closeButton->setAutoRaise(true);
     closeButton->setFixedSize(18, 18);
-    closeButton->setIconSize(QSize(9, 9));
     closeButton->setCursor(Qt::ArrowCursor);
     layout->addWidget(closeButton);
 

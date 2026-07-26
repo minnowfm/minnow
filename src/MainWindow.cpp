@@ -1,10 +1,13 @@
 #include "MainWindow.h"
+#include "ActivityTab.h"
 #include "BrowserTab.h"
 #include "FileOperations.h"
 #include "PathBar.h"
 #include "PlacesSidebar.h"
 #include "SettingsTab.h"
 #include "TabBar.h"
+#include "TaskManager.h"
+#include "TaskProgressPopup.h"
 
 #include <QApplication>
 #include <QCloseEvent>
@@ -59,12 +62,27 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     sidebarLayout->setSpacing(0);
     sidebarLayout->addWidget(m_sidebar, 1);
 
-    auto *settingsButton = new QToolButton(sidebarContainer);
+    auto *bottomRow = new QWidget(sidebarContainer);
+    auto *bottomRowLayout = new QHBoxLayout(bottomRow);
+    bottomRowLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *settingsButton = new QToolButton(bottomRow);
     settingsButton->setIcon(QIcon::fromTheme(QStringLiteral("configure")));
     settingsButton->setToolTip(tr("Settings"));
     settingsButton->setAutoRaise(true);
     connect(settingsButton, &QToolButton::clicked, this, &MainWindow::openSettingsTab);
-    sidebarLayout->addWidget(settingsButton);
+    bottomRowLayout->addWidget(settingsButton);
+
+    bottomRowLayout->addStretch(1);
+
+    m_tasksButton = new QToolButton(bottomRow);
+    m_tasksButton->setIcon(QIcon::fromTheme(QStringLiteral("download")));
+    m_tasksButton->setToolTip(tr("Activity"));
+    m_tasksButton->setAutoRaise(true);
+    connect(m_tasksButton, &QToolButton::clicked, this, &MainWindow::showTaskPopup);
+    bottomRowLayout->addWidget(m_tasksButton);
+
+    sidebarLayout->addWidget(bottomRow);
 
     grid->addWidget(sidebarContainer, 1, 0);
 
@@ -89,6 +107,22 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    // Don't let the window actually go away while a copy/move/compress/etc. is still running
+    // in the background - hide it instead and finish closing once every tracked task is done,
+    // so a real KIO job or QtConcurrent archive task never gets cut off mid-operation.
+    if (TaskManager::self()->hasActiveTasks()) {
+        event->ignore();
+        hide();
+        if (!m_waitingForTasksToQuit) {
+            m_waitingForTasksToQuit = true;
+            connect(TaskManager::self(), &TaskManager::tasksChanged, this, [this] {
+                if (m_waitingForTasksToQuit && !TaskManager::self()->hasActiveTasks())
+                    close();
+            });
+        }
+        return;
+    }
+
     QSettings settings;
     settings.setValue(QStringLiteral("MainWindow/Size"), size());
     QMainWindow::closeEvent(event);
@@ -187,6 +221,8 @@ void MainWindow::closeTab(int index)
     QWidget *w = m_tabStack->widget(index);
     if (w == m_settingsTab)
         m_settingsTab = nullptr;
+    if (w == m_activityTab)
+        m_activityTab = nullptr;
     m_tabBar->removeTab(index);
     m_tabStack->removeWidget(w);
     w->deleteLater();
@@ -275,6 +311,38 @@ void MainWindow::openSettingsTab()
     updateContentCardCorners();
 }
 
+void MainWindow::openActivityTab()
+{
+    if (m_activityTab) {
+        const int idx = m_tabStack->indexOf(m_activityTab);
+        if (idx >= 0) {
+            m_tabBar->setCurrentIndex(idx);
+            return;
+        }
+        m_activityTab = nullptr;
+    }
+
+    m_activityTab = new ActivityTab(this);
+    m_tabStack->addWidget(m_activityTab);
+    const int index = m_tabBar->addTab(tr("Activity"));
+    m_tabBar->setCurrentIndex(index);
+    updateContentCardCorners();
+}
+
+void MainWindow::showTaskPopup()
+{
+    auto *popup = new TaskProgressPopup(this);
+    connect(popup, &TaskProgressPopup::showMoreRequested, this, &MainWindow::openActivityTab);
+
+    // Anchored to the button's left edge and growing rightward (rather than aligning right
+    // edges) - the sidebar is narrower than the popup, so a right-aligned popup would run off
+    // the left edge of the window instead of overlapping the content area like a real flyout.
+    const QPoint buttonTopLeft = m_tasksButton->mapToGlobal(QPoint(0, 0));
+    const int popupHeight = popup->sizeHint().height();
+    popup->move(buttonTopLeft.x(), buttonTopLeft.y() - popupHeight);
+    popup->show();
+}
+
 void MainWindow::onTabUrlChanged(const QUrl &url)
 {
     Q_UNUSED(url);
@@ -313,7 +381,7 @@ void MainWindow::updateChromeForCurrentTab()
         m_backButton->setEnabled(false);
         m_forwardButton->setEnabled(false);
         m_upButton->setEnabled(false);
-        setWindowTitle(tr("Settings"));
+        setWindowTitle(m_tabStack->currentWidget() == m_activityTab ? tr("Activity") : tr("Settings"));
         m_itemCountLabel->clear();
         m_freeSpaceLabel->clear();
         return;
@@ -429,10 +497,44 @@ void MainWindow::setupShortcuts()
         });
         activateShortcuts << shortcut;
     }
+
+    auto *cutShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_X), this);
+    cutShortcut->setContext(Qt::WindowShortcut);
+    connect(cutShortcut, &QShortcut::activated, this, [this] {
+        if (auto *tab = currentTab())
+            FileOperations::cutToClipboard(tab->selectedUrls());
+    });
+    activateShortcuts << cutShortcut;
+
+    auto *copyShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_C), this);
+    copyShortcut->setContext(Qt::WindowShortcut);
+    connect(copyShortcut, &QShortcut::activated, this, [this] {
+        if (auto *tab = currentTab())
+            FileOperations::copyToClipboard(tab->selectedUrls());
+    });
+    activateShortcuts << copyShortcut;
+
+    auto *pasteShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_V), this);
+    pasteShortcut->setContext(Qt::WindowShortcut);
+    connect(pasteShortcut, &QShortcut::activated, this, [this] {
+        if (auto *tab = currentTab())
+            FileOperations::pasteClipboard(tab->currentUrl(), this);
+    });
+    activateShortcuts << pasteShortcut;
+
+    auto *renameShortcut = new QShortcut(QKeySequence(Qt::Key_F2), this);
+    renameShortcut->setContext(Qt::WindowShortcut);
+    connect(renameShortcut, &QShortcut::activated, this, [this] {
+        if (auto *tab = currentTab())
+            tab->renameSelectionInteractive();
+    });
+    activateShortcuts << renameShortcut;
+
     // A WindowShortcut consumes the key event outright, regardless of which widget has
-    // focus - it never even reaches a focused QLineEdit's own keyPressEvent. Disabling it
-    // whenever a line edit (path bar edit line, search box) has focus lets Return reach
-    // them normally instead of being stolen for "activate the selected item".
+    // focus - it never even reaches a focused QLineEdit's own keyPressEvent. Disabling all
+    // of the above whenever a line edit (path bar edit line, search box, or a dialog's own
+    // input field) has focus lets Return/Ctrl+C/Ctrl+X/Ctrl+V/F2 reach it normally instead of
+    // being stolen for file-list actions.
     connect(qApp, &QApplication::focusChanged, this, [activateShortcuts](QWidget *, QWidget *now) {
         const bool inLineEdit = qobject_cast<QLineEdit *>(now) != nullptr;
         for (QShortcut *shortcut : activateShortcuts)
