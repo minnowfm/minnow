@@ -2,8 +2,7 @@
 
 #include <QWidget>
 
-// Full-page view of TaskManager's activity list - what "Show More" in TaskProgressPopup
-// opens (see MainWindow::openActivityTab()), same pattern as SettingsTab.
+// full-page activity list, opened via "Show More" in the popup (MainWindow::openActivityTab())
 class ActivityTab : public QWidget
 {
     Q_OBJECT

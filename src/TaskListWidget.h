@@ -7,8 +7,8 @@ class QVBoxLayout;
 class QTimer;
 class IndeterminateBar;
 
-// Renders TaskManager's current task list live. Used by both TaskProgressPopup (the sidebar
-// flyout) and ActivityTab (the full-page view), so the per-task row layout only exists once.
+// live render of TaskManager's task list, shared by the popup flyout and the full ActivityTab
+// so we don't have two copies of the row layout
 class TaskListWidget : public QWidget
 {
     Q_OBJECT
@@ -25,8 +25,6 @@ private:
 
     QVBoxLayout *m_layout = nullptr;
     QTimer *m_animationTimer = nullptr;
-    // Bars for tasks with no measurable progress (percent == -1) - refreshed on every
-    // rebuild() and driven by m_animationTimer.
-    QHash<int, IndeterminateBar *> m_indeterminateBars;
+    QHash<int, IndeterminateBar *> m_indeterminateBars; // percent == -1 tasks, rebuilt each rebuild()
     qreal m_animationPhase = 0.0;
 };

@@ -9,8 +9,7 @@ license=('GPL-3.0-or-later')
 depends=('qt6-base' 'kcoreaddons' 'kconfigwidgets' 'kwidgetsaddons' 'kio' 'kfilemetadata' 'karchive' 'knotifications')
 provides=('minnow')
 conflicts=('minnow')
-# Pulls the tarball the "Release packages" GitHub Actions workflow attaches to each
-# tagged release (built in an archlinux:latest container, so it's ABI-compatible here).
+# grabs the tarball built by the release workflow (archlinux:latest container, so ABI matches)
 source=("$pkgname-$pkgver.tar.gz::https://github.com/minnowfm/minnow/releases/download/v$pkgver/minnow-v$pkgver-x86_64.tar.gz")
 sha256sums=('05545d5890806defd7c6e8b72423d77af775f4270491bd0c4609ef45d829c800')
 

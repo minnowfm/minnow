@@ -68,9 +68,7 @@ private:
 
     QVector<FixedPlace> m_fixedPlaces;
     QVector<PinnedEntry> m_pinned;
-    // Every top-level section - Places, Devices, Network, Bookmarks, and any custom
-    // sections - in display order. All of them are reorderable.
-    QStringList m_sectionOrder;
+    QStringList m_sectionOrder; // display order for all sections (fixed + custom), all reorderable
     QVector<DriveEntry> m_drives;
     QVector<DriveEntry> m_networkShares;
     bool m_drivesInitialized = false;

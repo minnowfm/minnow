@@ -5,8 +5,7 @@
 
 namespace
 {
-// Recent-history cap so a long session doesn't grow this list unbounded.
-constexpr int kMaxTasks = 50;
+constexpr int kMaxTasks = 50; // history cap, otherwise a long session just keeps growing this
 }
 
 TaskManager *TaskManager::self()
@@ -46,9 +45,8 @@ int TaskManager::addTask(const QString &description)
     task.elapsed.start();
     m_tasks.prepend(task);
 
-    // Trim from the tail, but only ever evict finished tasks - the cap exists to stop the
-    // completed-history list from growing unbounded, not to lose track of something still
-    // running just because it happens to be the oldest entry.
+    // only evict finished tasks - don't want to lose track of something still running
+    // just because it's the oldest entry
     while (m_tasks.size() > kMaxTasks) {
         int indexToRemove = -1;
         for (int i = m_tasks.size() - 1; i >= 0; --i) {
@@ -115,9 +113,8 @@ void TaskManager::removeTask(int id)
 {
     for (int i = 0; i < m_tasks.size(); ++i) {
         if (m_tasks.at(i).id == id) {
-            // Guarded here (not just by disabling the dismiss button in the UI) so this stays
-            // safe regardless of caller - dismissing an active task would erase its only
-            // record, making hasActiveTasks() blind to work that's still actually running.
+            // belt and suspenders re: the disabled dismiss button in the UI - don't let an
+            // active task get erased, hasActiveTasks() needs it
             if (!m_tasks.at(i).finished)
                 return;
             m_tasks.removeAt(i);
@@ -129,8 +126,13 @@ void TaskManager::removeTask(int id)
 
 void TaskManager::notifyFinished(const Task &task)
 {
-    // No componentName passed - KNotification falls back to the application name (set via
-    // QApplication::setApplicationName() in main.cpp) for the notification's config lookup.
+    // Tests exercise this same code path (finishTask()/trackJob() completion) a lot, and
+    // without this they'd pop a real desktop notification on whatever KDE session runs them -
+    // the in-app task list is enough for a test to check against.
+    if (qEnvironmentVariableIsSet("MINNOW_NO_NOTIFICATIONS"))
+        return;
+
+    // no componentName - falls back to the app name from main.cpp's setApplicationName()
     KNotification::event(task.failed ? KNotification::Warning : KNotification::Notification, task.description,
                           task.failed ? tr("Failed") : tr("Finished"));
 }

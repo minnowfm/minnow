@@ -50,9 +50,8 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     grid->setHorizontalSpacing(8);
     grid->setVerticalSpacing(0);
 
-    // Row 0, column 0 is an empty spacer above the sidebar so the tab bar (row 0, column 1)
-    // lines up exactly with the content card's left edge (row 1, column 1) - the grid keeps
-    // both rows' column widths in sync automatically, so the sidebar's own width drives it.
+    // empty spacer at (0,0) so the tab bar at (0,1) lines up with the content card's left
+    // edge at (1,1) - the grid syncs column widths across rows for us, sidebar width drives it
     grid->addWidget(new QWidget(central), 0, 0);
     grid->addWidget(m_tabBar, 0, 1);
 
@@ -107,9 +106,8 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    // Don't let the window actually go away while a copy/move/compress/etc. is still running
-    // in the background - hide it instead and finish closing once every tracked task is done,
-    // so a real KIO job or QtConcurrent archive task never gets cut off mid-operation.
+    // hide instead of closing while a job is still running in the background, actually
+    // close once everything's done - don't want to cut off a copy/compress mid-flight
     if (TaskManager::self()->hasActiveTasks()) {
         event->ignore();
         hide();
@@ -334,9 +332,8 @@ void MainWindow::showTaskPopup()
     auto *popup = new TaskProgressPopup(this);
     connect(popup, &TaskProgressPopup::showMoreRequested, this, &MainWindow::openActivityTab);
 
-    // Anchored to the button's left edge and growing rightward (rather than aligning right
-    // edges) - the sidebar is narrower than the popup, so a right-aligned popup would run off
-    // the left edge of the window instead of overlapping the content area like a real flyout.
+    // anchor to the button's left edge, not right-aligned - sidebar's narrower than the
+    // popup so right-aligning would run it off the window edge instead of over the content area
     const QPoint buttonTopLeft = m_tasksButton->mapToGlobal(QPoint(0, 0));
     const int popupHeight = popup->sizeHint().height();
     popup->move(buttonTopLeft.x(), buttonTopLeft.y() - popupHeight);
@@ -453,12 +450,10 @@ void MainWindow::setupStatusBar()
 
 void MainWindow::setupShortcuts()
 {
-    // Scoped to this window (not ApplicationShortcut) so that with multiple windows open,
-    // each one's shortcut fires unambiguously instead of Qt refusing to disambiguate two
-    // identical app-wide shortcuts. uiInterface()->setParentWidget() is likewise called
-    // right before each undo()/redo() - KIO::FileUndoManager is a single global instance
-    // shared by every window, so its UI parent has to be (re-)pointed at whichever window
-    // actually triggered the action, not fixed once at construction time.
+    // WindowShortcut, not ApplicationShortcut - with two windows open, an app-wide shortcut
+    // is ambiguous and Qt just refuses to fire it. setParentWidget() gets called again right
+    // before undo()/redo() below since FileUndoManager is one global instance shared by every
+    // window - has to be re-pointed at whichever window actually triggered it.
     auto *undoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Z), this);
     undoShortcut->setContext(Qt::WindowShortcut);
     connect(undoShortcut, &QShortcut::activated, this, [this] {
@@ -530,11 +525,9 @@ void MainWindow::setupShortcuts()
     });
     activateShortcuts << renameShortcut;
 
-    // A WindowShortcut consumes the key event outright, regardless of which widget has
-    // focus - it never even reaches a focused QLineEdit's own keyPressEvent. Disabling all
-    // of the above whenever a line edit (path bar edit line, search box, or a dialog's own
-    // input field) has focus lets Return/Ctrl+C/Ctrl+X/Ctrl+V/F2 reach it normally instead of
-    // being stolen for file-list actions.
+    // WindowShortcut swallows the key event no matter who has focus - a focused QLineEdit
+    // never even sees it. disable these while any line edit has focus so Ctrl+C/V/X, F2 etc
+    // work normally there instead of getting hijacked for the file list
     connect(qApp, &QApplication::focusChanged, this, [activateShortcuts](QWidget *, QWidget *now) {
         const bool inLineEdit = qobject_cast<QLineEdit *>(now) != nullptr;
         for (QShortcut *shortcut : activateShortcuts)
@@ -579,6 +572,9 @@ void MainWindow::applyStyle()
                         "QFrame#contentCard { background: %1; border-left: 1px solid %2; border-right: 1px solid %2; "
                         "border-bottom: 1px solid %2; border-top: none; }"
                         "QLineEdit, PathBar { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
+                        "QComboBox { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
+                        "QComboBox:hover { background: %5; }"
+                        "QComboBox::drop-down { border: none; width: 20px; }"
                         "QToolButton { border-radius: 8px; padding: 4px; }"
                         "QToolButton:hover { background: %5; }"
                         "QListWidget::item { border-radius: 10px; padding: 5px 8px; margin: 1px 4px; }"
@@ -631,9 +627,8 @@ void MainWindow::updateContentCardCorners()
     const QColor cardColor = dark ? windowColor.lighter(125) : windowColor.lighter(106);
     const QColor borderColor = dark ? windowColor.lighter(150) : windowColor.darker(112);
 
-    // The top-left corner only stays square while the tab bar is visible AND the first tab
-    // (the one sitting flush at the left) is the active one - any other state means nothing
-    // is flush against that corner, so it should read as a normal rounded card corner.
+    // only square off the top-left corner when the tab bar is showing and tab 0 is active -
+    // that's the only case where something actually sits flush against that corner
     const bool tabBarVisible = m_tabBar->count() > 1;
     const bool firstTabActive = m_tabBar->currentIndex() == 0;
     const bool squareTopLeft = tabBarVisible && firstTabActive;

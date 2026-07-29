@@ -89,15 +89,12 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
-    // loadPinned() has to run first - loadSectionOrder() needs m_pinned populated to
-    // detect and migrate a legacy custom section that collides with a fixed section name.
-    loadPinned();
+    loadPinned(); // must run before loadSectionOrder(), which needs m_pinned for the legacy-section migration
     loadSectionOrder();
     refreshDrives();
 
-    // Picks up newly mounted network shares (NFS/SMB/etc. mounted outside the app, e.g.
-    // via fstab or a manual `mount`) without the user having to right-click - Refresh
-    // Drives. refreshDrives() itself no-ops when nothing actually changed.
+    // catches shares mounted outside the app (fstab, manual `mount`) so the user doesn't
+    // have to hit Refresh Drives themselves. no-ops if nothing changed.
     auto *driveRefreshTimer = new QTimer(this);
     driveRefreshTimer->setInterval(5000);
     connect(driveRefreshTimer, &QTimer::timeout, this, &PlacesSidebar::refreshDrives);
@@ -153,14 +150,11 @@ void PlacesSidebar::setFixedPlaceVisible(const QString &settingsKey, bool visibl
 
 void PlacesSidebar::rebuildAll()
 {
-    // Items are about to be destroyed by clear() - drop the dangling reference rather
-    // than trying to un-highlight it first.
-    m_dropHighlightItem = nullptr;
+    m_dropHighlightItem = nullptr; // clear() below destroys it, don't try to un-highlight first
     clear();
 
-    // Every section - fixed (Places/Devices/Network) or user-defined (Bookmarks/custom) -
-    // lives in one ordered list now, so any of them can be moved relative to any other
-    // (e.g. Devices above Places) via the context menu's Move Up/Down or drag-and-drop.
+    // fixed and custom sections all live in one ordered list, so e.g. Devices can be
+    // dragged above Places via the context menu or drag-and-drop
     for (const QString &section : std::as_const(m_sectionOrder)) {
         if (section == kPlacesHeader) {
             addHeaderItem(kPlacesHeader, /*reorderable=*/true);
@@ -225,11 +219,9 @@ void PlacesSidebar::refreshDrives()
             newDrives << DriveEntry{label, QUrl::fromLocalFile(rootPath)};
     }
 
-    // Same set as before (the common case on every periodic re-check) - skip the
-    // clear()+rebuild so the list doesn't flicker or drop scroll position/selection
-    // every few seconds just to detect newly mounted network shares. Never skip the very
-    // first call though - on a system with no eligible extra volumes, both vectors start
-    // and stay empty, and Places/Bookmarks would otherwise never get built at all.
+    // nothing changed since last check (the usual case) -> skip rebuild so we don't flicker
+    // or lose scroll/selection every 5s. but always run once on startup, even with 0 drives,
+    // or Places/Bookmarks would never get built
     if (m_drivesInitialized && newDrives == m_drives && newNetworkShares == m_networkShares)
         return;
 
@@ -252,8 +244,7 @@ bool PlacesSidebar::isPinned(const QUrl &url) const
 
 QStringList PlacesSidebar::availableSections() const
 {
-    // Places/Devices/Network aren't pin targets - only Bookmarks and custom sections are.
-    QStringList result;
+    QStringList result; // only Bookmarks/custom sections are pin targets, not Places/Devices/Network
     for (const QString &name : m_sectionOrder) {
         if (name != kPlacesHeader && name != kDevicesHeader && name != kNetworkHeader)
             result << name;
@@ -402,18 +393,14 @@ void PlacesSidebar::savePinned()
 void PlacesSidebar::loadSectionOrder()
 {
     QSettings settings;
-    // Same settings key as the older "custom sections only" list - a config saved before
-    // every section became reorderable just won't have some/all of the fixed names yet.
-    // Insert any missing ones at their original fixed position (Places first, Bookmarks
-    // right after, Devices/Network last) rather than just appending, so an existing
-    // config's visual order doesn't jump around on first load after this change.
+    // reusing the old "CustomSections" key from before every section was reorderable, so an
+    // old config won't have the fixed names in it yet - backfilled below at their old fixed
+    // spots (Places first, Bookmarks next, Devices/Network last) so nothing jumps around
     m_sectionOrder = settings.value(QStringLiteral("CustomSections")).toStringList();
 
-    // "Network" only became a reserved fixed-section name in this version - a pre-existing
-    // config could have a user-created custom section by that exact name. Without this,
-    // its bookmarks would silently stop rendering (the position now takes the fixed
-    // network-mounts branch in rebuildAll() instead of the generic custom-section one) and
-    // the section could no longer be deleted. Rename the legacy one out of the way first.
+    // "Network" used to be a normal user section name before it became reserved. if someone
+    // already has a custom section called that, it'd get swallowed by the new fixed-network
+    // branch in rebuildAll() and become undeletable - rename it out of the way
     if (m_sectionOrder.contains(kNetworkHeader)) {
         bool hasLegacyPins = false;
         for (const auto &pinned : m_pinned) {
@@ -486,9 +473,8 @@ int PlacesSidebar::nextVisibleSectionIndex(int fromIdx, int direction) const
 
 void PlacesSidebar::moveSection(const QString &name, int direction)
 {
-    // Swap with the next *visible* neighbor, not just the next list entry - otherwise
-    // "Move Up" past a hidden/empty section (e.g. an unused Bookmarks) would silently
-    // do nothing the user can see.
+    // has to swap with the next *visible* neighbor - swapping with a hidden one (an empty
+    // Bookmarks, say) would look like "Move Up" did nothing at all
     const int idx = m_sectionOrder.indexOf(name);
     if (idx < 0)
         return;
@@ -670,9 +656,9 @@ void PlacesSidebar::dropEvent(QDropEvent *event)
             return;
         }
 
-        // Which half of the target row was dropped on decides before-vs-after - otherwise
-        // there'd be no way to move a section past its immediate neighbor (dropping "before"
-        // an already-adjacent item is a no-op).
+        // top half of the row = insert before, bottom half = after - needed so you can drop
+        // a section past its immediate neighbor at all (dropping "before" an adjacent item
+        // is otherwise a no-op)
         const bool dropBelow = event->position().toPoint().y() > visualItemRect(hovered).center().y();
         int insertIdx = dropBelow ? targetIdx + 1 : targetIdx;
         m_sectionOrder.removeAt(fromIdx);

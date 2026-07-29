@@ -1,9 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(minnow VERSION 0.1.1 LANGUAGES CXX)
 
-# The one place the app's own version is set for local/dev builds. Release CI overrides
-# this from the pushed tag instead of requiring every packaging manifest to be hand-bumped
-# in lockstep - see MINNOW_APP_VERSION usage in release.yml and the packaging/ build scripts.
+# local/dev version string - CI overrides this from the git tag on release, see release.yml
 set(MINNOW_APP_VERSION "${PROJECT_VERSION}" CACHE STRING "Application version string reported by the app")
 
 set(CMAKE_CXX_STANDARD 17)
@@ -50,10 +48,8 @@ target_link_libraries(minnow_core PUBLIC
 )
 target_include_directories(minnow_core PUBLIC src)
 
-# KFileMetaData::Property::{VideoCodec,AudioCodec,PixelFormat,ColorSpace} only exist since
-# 6.13 - older KFileMetaData (e.g. the one bundled by the org.kde.Sdk 6.7 Flatpak runtime)
-# doesn't have them. Gate their use instead of hard requiring a newer KFileMetaData than
-# some build environments ship.
+# VideoCodec/AudioCodec/PixelFormat/ColorSpace props showed up in 6.13, the Flatpak
+# org.kde.Sdk 6.7 runtime doesn't have them yet - gate instead of bumping the min version
 if(KF6FileMetaData_VERSION VERSION_GREATER_EQUAL 6.13.0)
     target_compile_definitions(minnow_core PUBLIC MINNOW_HAVE_KFILEMETADATA_CODEC_PROPS)
 endif()
@@ -88,9 +84,7 @@ add_executable(minnow
 target_link_libraries(minnow PRIVATE minnow_core)
 target_compile_definitions(minnow PRIVATE MINNOW_VERSION="${MINNOW_APP_VERSION}")
 
-# KIO::FileUndoManager::redo() only exists since KF6 6.17 - older KF6 (still common on e.g.
-# Fedora 40's default repos) only has undo(). Gate the Redo shortcut on it instead of hard
-# requiring a KIO version newer than most distros currently ship.
+# redo() landed in KF6 6.17, Fedora 40's repos are still on older KF6 - same deal, gate it
 if(KF6KIO_VERSION VERSION_GREATER_EQUAL 6.17.0)
     target_compile_definitions(minnow PRIVATE MINNOW_HAVE_KIO_REDO)
 endif()
@@ -109,7 +103,11 @@ if(BUILD_TESTING)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
-    add_executable(minnow_tests tests/test_pathutils.cpp)
-    target_link_libraries(minnow_tests PRIVATE minnow_core Qt6::Test)
-    add_test(NAME minnow_tests COMMAND minnow_tests)
+    # one executable per file - they each have their own main() (QTEST_MAIN or a custom one
+    # for the KIO/archive tests), can't just link them into a single binary
+    foreach(_test_name pathutils fileoperations taskmanager kio_operations archive clipboard destructive_operations)
+        add_executable(test_${_test_name} tests/test_${_test_name}.cpp)
+        target_link_libraries(test_${_test_name} PRIVATE minnow_core Qt6::Test)
+        add_test(NAME test_${_test_name} COMMAND test_${_test_name})
+    endforeach()
 endif()

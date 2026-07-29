@@ -48,8 +48,7 @@
 
 namespace
 {
-// Shared by remove() and emptyTrash() - both are irreversible, so both are gated by the
-// same "Confirmations/ConfirmPermanentDelete" setting rather than needing their own toggle.
+// used by remove() and emptyTrash(), both irreversible - one setting gates both
 bool confirmPermanentDelete(QWidget *parent, const QString &text)
 {
     QSettings settings;
@@ -68,9 +67,7 @@ bool confirmPermanentDelete(QWidget *parent, const QString &text)
     return box.clickedButton() == deleteButton;
 }
 
-// Ordered longest-suffix-first so a name like "foo.tar.gz" matches ".tar.gz" (and gets its
-// whole compound extension stripped for the extracted folder name) rather than stopping at
-// the generic ".gz"/".tar" it also happens to end with.
+// longest suffix first, or "foo.tar.gz" would match plain ".gz"/".tar" instead of the whole thing
 const QStringList &archiveSuffixes()
 {
     static const QStringList suffixes = {
@@ -81,18 +78,7 @@ const QStringList &archiveSuffixes()
     return suffixes;
 }
 
-// Appends " (2)", " (3)", ... before `extension` until the result doesn't already exist.
-// `extension` includes the leading dot, or is empty for a plain directory name.
-QString uniqueFilePath(const QString &dirPath, const QString &baseName, const QString &extension)
-{
-    QString candidate = dirPath + QLatin1Char('/') + baseName + extension;
-    for (int counter = 2; QFileInfo::exists(candidate); ++counter)
-        candidate = dirPath + QLatin1Char('/') + baseName + QStringLiteral(" (%1)").arg(counter) + extension;
-    return candidate;
-}
-
-// Dispatched from the worker thread doing the actual compress/extract - TaskManager lives on
-// the GUI thread, so this can't just be a direct call.
+// called from the compress/extract worker thread, TaskManager lives on the GUI thread
 void reportProgress(int taskId, qint64 bytesDone, qint64 totalBytes)
 {
     if (totalBytes <= 0)
@@ -102,9 +88,8 @@ void reportProgress(int taskId, qint64 bytesDone, qint64 totalBytes)
                                Qt::QueuedConnection);
 }
 
-// QFileInfo::symLinkTarget() resolves to an absolute path, losing a relative link's actual
-// (portable) target and leaking this machine's directory layout into the archive. readlink()
-// returns the link's raw, unresolved contents instead.
+// QFileInfo::symLinkTarget() resolves to an absolute path - that'd bake this machine's
+// directory layout into the archive. readlink() gives us the raw, unresolved target.
 QString rawSymLinkTarget(const QString &path)
 {
     const QByteArray encoded = QFile::encodeName(path);
@@ -129,17 +114,14 @@ qint64 localSizeRecursive(const QString &path)
     return total;
 }
 
-// Recreates what KArchive::addLocalDirectory() does internally (recurse, writeDir for each
-// directory, addLocalFile for each file) but one file at a time, so progress can be reported
-// after each one - addLocalDirectory() itself is a single opaque call with no way to hook in.
+// basically a manual addLocalDirectory() - that call is one opaque blob with no way to
+// report progress in between files, so we do the recursion + writeDir/addLocalFile ourselves
 bool addPathRecursive(KArchive &archive, const QString &absolutePath, const QString &destPath, qint64 &bytesDone, qint64 totalBytes,
                       int taskId, QString *error)
 {
     const QFileInfo info(absolutePath);
-    // Checked before isDir() specifically because isDir() follows symlinks - without this, a
-    // symlink to a directory gets recursed into as if it were a real subdirectory, which for a
-    // link to an ancestor directory recurses forever, and for a link elsewhere pulls in content
-    // outside the selected tree. Store the link itself instead of following it.
+    // isDir() follows symlinks, so this has to be checked first - otherwise a symlink to a
+    // parent dir recurses forever, and one pointing elsewhere pulls in stuff we don't want
     if (info.isSymLink()) {
         if (!archive.writeSymLink(destPath, rawSymLinkTarget(absolutePath))) {
             *error = QObject::tr("Could not add link \"%1\" to the archive.").arg(destPath);
@@ -186,8 +168,7 @@ qint64 archiveSizeRecursive(const KArchiveDirectory *dir)
     return total;
 }
 
-// Recreates what KArchiveDirectory::copyTo(dest, recursive=true) does internally, but one file
-// at a time so progress can be reported after each one.
+// same idea as addPathRecursive() above but for extraction - copyTo(recursive=true) can't report progress
 bool extractRecursive(const KArchiveDirectory *dir, const QString &destDir, qint64 &bytesDone, qint64 totalBytes, int taskId,
                       QString *error)
 {
@@ -205,6 +186,18 @@ bool extractRecursive(const KArchiveDirectory *dir, const QString &destDir, qint
                 return false;
             continue;
         }
+        // KArchive has no distinct symlink entry type, a link still reports isFile() - check
+        // for it before the copyTo() branch or it just gets dereferenced into a regular file
+        const QString linkTarget = entry->symLinkTarget();
+        if (!linkTarget.isEmpty()) {
+            const QString linkPath = destDir + QLatin1Char('/') + name;
+            if (!QFile::link(linkTarget, linkPath)) {
+                *error = QObject::tr("Could not recreate link \"%1\".").arg(name);
+                return false;
+            }
+            continue;
+        }
+
         const auto *file = static_cast<const KArchiveFile *>(entry);
         if (!file->copyTo(destDir)) {
             *error = QObject::tr("Could not extract \"%1\".").arg(name);
@@ -238,6 +231,24 @@ QUrl mkdirDestination(const QUrl &parentDir, const QString &name)
     return dest;
 }
 
+QString uniqueFilePath(const QString &dirPath, const QString &baseName, const QString &extension)
+{
+    QString candidate = dirPath + QLatin1Char('/') + baseName + extension;
+    for (int counter = 2; QFileInfo::exists(candidate); ++counter)
+        candidate = dirPath + QLatin1Char('/') + baseName + QStringLiteral(" (%1)").arg(counter) + extension;
+    return candidate;
+}
+
+QString archiveBaseName(const QString &fileName)
+{
+    const QString lowerName = fileName.toLower();
+    for (const QString &suffix : archiveSuffixes()) {
+        if (lowerName.endsWith(suffix))
+            return fileName.left(fileName.length() - suffix.length());
+    }
+    return fileName;
+}
+
 void copyTo(const QList<QUrl> &sources, const QUrl &destDir, QWidget *parent)
 {
     if (sources.isEmpty())
@@ -268,8 +279,7 @@ void trash(const QList<QUrl> &urls, QWidget *parent)
     KJobWidgets::setWindow(job, parent);
     job->uiDelegate()->setAutoErrorHandlingEnabled(true);
     KIO::FileUndoManager::self()->recordJob(KIO::FileUndoManager::Trash, urls, QUrl(QStringLiteral("trash:/")), job);
-    // Not tracked in Activity (and so no notification either) - deletion, trash or permanent,
-    // shouldn't show up there at all.
+    // no TaskManager::trackJob() here - deletions don't belong in the activity list
 }
 
 void remove(const QList<QUrl> &urls, QWidget *parent)
@@ -286,8 +296,7 @@ void remove(const QList<QUrl> &urls, QWidget *parent)
     KIO::Job *job = KIO::del(urls, KIO::DefaultFlags);
     KJobWidgets::setWindow(job, parent);
     job->uiDelegate()->setAutoErrorHandlingEnabled(true);
-    // Permanent deletion is intentionally not recorded with FileUndoManager - it can't be undone.
-    // Not tracked in the Activity list either - it's effectively instant, nothing to show progress for.
+    // no FileUndoManager::recordJob() - permanent means permanent, there's no undo to record
 }
 
 void rename(const QUrl &url, const QString &newName, QWidget *parent)
@@ -297,7 +306,6 @@ void rename(const QUrl &url, const QString &newName, QWidget *parent)
     KJobWidgets::setWindow(job, parent);
     job->uiDelegate()->setAutoErrorHandlingEnabled(true);
     KIO::FileUndoManager::self()->recordJob(KIO::FileUndoManager::Rename, {url}, dest, job);
-    // Not tracked in the Activity list - a rename is effectively instant, nothing to show progress for.
 }
 
 void mkdir(const QUrl &parentDir, const QString &name, QWidget *parent)
@@ -314,9 +322,8 @@ void openUrl(const QUrl &url, QWidget *parent)
 {
     auto *job = new KIO::OpenUrlJob(url);
     job->setUiDelegate(KIO::createDefaultJobUiDelegate(KJobUiDelegate::AutoErrorHandlingEnabled, parent));
-    // Off by default (KIO assumes non-file-manager callers like browsers/mail clients) -
-    // this is what makes double-clicking an executable prompt "run or open as text?"
-    // (Dolphin's behavior) instead of just failing with no associated application.
+    // off by default in KIO (assumes a browser/mail-client caller) - this is what gives us
+    // the "run or open as text?" prompt on executables, like Dolphin does
     job->setShowOpenOrExecuteDialog(true);
     job->start();
 }
@@ -375,7 +382,7 @@ void openTerminal(const QUrl &url, QWidget *parent)
         }
     }
 
-    // Kept in sync with the terminal list SettingsTab advertises as options.
+    // keep this list matching what SettingsTab offers as options
     static const QStringList candidates = {
         QStringLiteral("konsole"),
         QStringLiteral("gnome-terminal"),
@@ -403,7 +410,6 @@ void batchRename(const QList<QUrl> &urls, const QString &newNamePattern, QChar p
     KJobWidgets::setWindow(job, parent);
     job->uiDelegate()->setAutoErrorHandlingEnabled(true);
     KIO::FileUndoManager::self()->recordJob(KIO::FileUndoManager::BatchRename, urls, parentOf(urls.first()), job);
-    // Not tracked in Activity - same reasoning as the single-item rename: effectively instant.
 }
 
 void cutToClipboard(const QList<QUrl> &urls)
@@ -467,11 +473,9 @@ void compressToArchive(const QList<QUrl> &sources, QWidget *parent)
     const QString baseName = sources.size() == 1 ? sources.first().fileName() : QObject::tr("Archive");
     const QString destPath = uniqueFilePath(dirPath, baseName, QStringLiteral(".zip"));
 
-    // Reserved synchronously, right after picking the name, rather than leaving actual file
-    // creation to the worker thread - otherwise a second compress triggered before the first
-    // worker gets around to opening its output would compute the same "unique" name (the real
-    // file doesn't exist yet as far as uniqueFilePath() can see) and both would write to it
-    // concurrently.
+    // reserve the filename right now, synchronously - if we left this to the worker thread,
+    // firing off a second compress before the first worker even opens its output file would
+    // hand out the same "unique" name twice
     QFile reservation(destPath);
     if (!reservation.open(QIODevice::WriteOnly)) {
         QMessageBox::warning(parent, QObject::tr("Compress"), QObject::tr("Could not create \"%1\".").arg(destPath));
@@ -479,18 +483,14 @@ void compressToArchive(const QList<QUrl> &sources, QWidget *parent)
     }
     reservation.close();
 
-    // KArchive's API is synchronous, so running it directly on the GUI thread would freeze
-    // the whole window for any selection large enough to take more than an instant (this is
-    // exactly what happened before this fix - a multi-item compress made Minnow "Not
-    // Responding"). QtConcurrent::run moves the actual I/O to a worker thread; the
-    // QFutureWatcher marshals the result back for the error dialog, if any.
+    // KArchive is synchronous - used to just call this straight on the GUI thread and a
+    // big enough selection would freeze the whole window ("Not Responding" and everything).
+    // QtConcurrent::run offloads the actual I/O, QFutureWatcher brings the result back.
     //
-    // The watcher (and its finished connection) is parented/anchored to TaskManager - which
-    // outlives every tab/window - rather than to `parent` (the tab that started this). If it
-    // were tied to the tab, closing that tab mid-operation would destroy the watcher, the
-    // connection would never fire, and finishTask() would never run: the task would stay
-    // "active" forever and block the whole app from closing. `parent` is still used for the
-    // error dialog, but only through a QPointer so a since-destroyed tab doesn't dangle.
+    // watcher lives under TaskManager, not `parent` - if it were parented to the tab that
+    // started this, closing that tab mid-compress would kill the watcher before its finished
+    // signal fires, and the task would just sit "active" forever and block app shutdown.
+    // still use `parent` for the error dialog, just through a QPointer so it can't dangle.
     const int taskId = TaskManager::self()->startTask(QObject::tr("Compressing %n item(s)", "", sources.size()));
     const QPointer<QWidget> safeParent(parent);
 
@@ -538,13 +538,7 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
     const QString fileName = archiveUrl.fileName();
     const QString lowerName = fileName.toLower();
 
-    QString baseName = fileName;
-    for (const QString &suffix : archiveSuffixes()) {
-        if (lowerName.endsWith(suffix)) {
-            baseName = fileName.left(fileName.length() - suffix.length());
-            break;
-        }
-    }
+    const QString baseName = archiveBaseName(fileName);
     if (baseName == fileName) {
         QMessageBox::warning(parent, QObject::tr("Extract"), QObject::tr("\"%1\" is not a recognized archive format.").arg(fileName));
         return;
@@ -558,10 +552,7 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
 
     const bool isZip = lowerName.endsWith(QStringLiteral(".zip"));
 
-    // Same reasoning as compressToArchive(): KArchive is synchronous, so the actual
-    // open/copyTo work happens on a worker thread instead of blocking the GUI thread, and the
-    // watcher is anchored to TaskManager (not `parent`) for the same reason - so closing the
-    // initiating tab mid-extraction can't leave the task stuck "active" forever.
+    // same deal as compressToArchive() above - worker thread + TaskManager-anchored watcher
     const int taskId = TaskManager::self()->startTask(QObject::tr("Extracting \"%1\"").arg(fileName));
     const QPointer<QWidget> safeParent(parent);
 
@@ -570,12 +561,9 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
         const QString error = watcher->result();
         TaskManager::self()->finishTask(taskId, !error.isEmpty());
         if (!error.isEmpty()) {
-            // destPath is a fresh, uniquely-named directory created just for this extraction -
-            // on failure (archive wouldn't open, or extraction stopped partway), remove
-            // whatever got written instead of leaving a partial tree that a retry can't tell
-            // apart from a real one (it just gets its own "(2)" suffix instead of overwriting).
-            // Done before the (modal) warning dialog so cleanup isn't gated on the user
-            // noticing and dismissing it.
+            // clean up the partial extraction before showing the (modal) dialog - otherwise
+            // a retry can't tell this half-written tree apart from a real one, it'd just get
+            // its own "(2)" folder instead of overwriting it
             QDir(destPath).removeRecursively();
             QMessageBox::warning(safeParent, QObject::tr("Extract"), error);
         }

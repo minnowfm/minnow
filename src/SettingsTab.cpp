@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QFont>
 #include <QFormLayout>
+#include <QFrame>
 #include <QLabel>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -79,9 +80,7 @@ SettingsTab::SettingsTab(QWidget *parent)
     form->addRow(tr("Terminal:"), m_terminalCombo);
     connect(m_terminalCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
         QSettings settings;
-        // currentIndex() alone isn't reliable here - editing the line edit's text in place
-        // (e.g. typing over "Auto-detect (recommended)") doesn't move it off 0, so compare
-        // the actual text instead of trusting the index.
+        // can't trust currentIndex() - typing over "Auto-detect" in place leaves index at 0
         const QString value = text == m_terminalCombo->itemText(0) ? QString() : text;
         settings.setValue(QStringLiteral("Terminal/Command"), value);
     });
@@ -94,10 +93,38 @@ SettingsTab::SettingsTab(QWidget *parent)
         settings.setValue(QStringLiteral("Confirmations/ConfirmPermanentDelete"), checked);
     });
 
+    // Muted secondary text color, same idea as MainWindow's footer text - palette(mid) sits
+    // too close to the card background in some themes to read as intentionally dimmed.
+    const QColor windowColor = palette().color(QPalette::Window);
+    const QColor mutedColor = windowColor.lightness() < 128 ? QColor(190, 190, 190) : QColor(90, 90, 90);
+
+    auto *divider = new QFrame(this);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setFrameShadow(QFrame::Sunken);
+
+    auto *aboutHeading = new QLabel(tr("About"), this);
+    aboutHeading->setFont(headingFont);
+
+    auto *aboutLabel = new QLabel(this);
+    aboutLabel->setTextFormat(Qt::RichText);
+    aboutLabel->setOpenExternalLinks(true);
+    aboutLabel->setWordWrap(true);
+    aboutLabel->setText(tr("<b>Minnow</b> %1<br>"
+                            "<span style=\"color:%2\">A simple, lightweight file manager for KDE</span><br><br>"
+                            "<span style=\"color:%2\">Created by Voten641<br>"
+                            "Licensed under <a href=\"https://www.gnu.org/licenses/gpl-3.0.html\">GPL-3.0-or-later</a><br>"
+                            "<a href=\"https://github.com/minnowfm/minnow\">github.com/minnowfm/minnow</a></span>")
+                             .arg(QStringLiteral(MINNOW_VERSION), mutedColor.name()));
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->addWidget(heading);
     layout->addSpacing(12);
     layout->addLayout(form);
     layout->addStretch(1);
+    layout->addWidget(divider);
+    layout->addSpacing(16);
+    layout->addWidget(aboutHeading);
+    layout->addSpacing(12);
+    layout->addWidget(aboutLabel);
 }

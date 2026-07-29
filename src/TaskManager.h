@@ -7,9 +7,8 @@
 
 class KJob;
 
-// Tracks in-flight and recently finished file operations (KIO jobs, plus the QtConcurrent
-// compress/extract work in FileOperations) so the sidebar's activity popup and the full
-// Activity tab can both show the same live list without either one owning the data.
+// tracks running/recent file ops (KIO jobs + the QtConcurrent archive work) as one shared
+// list, so the popup and the Activity tab both just read from here instead of duplicating state
 class TaskManager : public QObject
 {
     Q_OBJECT
@@ -23,28 +22,21 @@ public:
         int percent = -1; // -1 = indeterminate (no measurable progress)
         bool finished = false;
         bool failed = false;
-        // Used to estimate time remaining from elapsed time and current percent - see
-        // TaskListWidget, which does the actual formatting.
-        QElapsedTimer elapsed;
+        QElapsedTimer elapsed; // for the ETA math, see TaskListWidget
     };
 
     QList<Task> tasks() const { return m_tasks; }
     bool hasActiveTasks() const;
 
-    // Attaches to an existing KJob's percent/result signals under `description`.
-    void trackJob(KJob *job, const QString &description);
+    void trackJob(KJob *job, const QString &description); // hooks into an existing KJob's signals
 
-    // For work that isn't a KJob (e.g. the QtConcurrent-based archive compress/extract).
-    // Returns an id to pass to finishTask() once the work completes.
+    // for non-KJob work (the QtConcurrent archive stuff). id gets passed back to finishTask().
     int startTask(const QString &description);
-    // Called from a worker thread via QMetaObject::invokeMethod(..., Qt::QueuedConnection) -
-    // never call this directly from another thread.
+    // call via QMetaObject::invokeMethod(..., Qt::QueuedConnection) from worker threads only
     void updateTaskProgress(int id, int percent);
     void finishTask(int id, bool failed = false);
 
-    // Dismisses one entry from the visible history - does not touch whatever job/work it
-    // was tracking, which keeps running regardless (this only affects what's displayed).
-    void removeTask(int id);
+    void removeTask(int id); // just hides the history entry, the actual job keeps running
 
 signals:
     void tasksChanged();

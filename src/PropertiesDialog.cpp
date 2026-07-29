@@ -22,18 +22,14 @@
 
 namespace
 {
-// Free-space gauge is a semantic "good" green, deliberately independent of the
-// theme's accent - everything else (plate tint, badges, rail selection) follows
-// palette().color(QPalette::Highlight) so it matches the user's actual color scheme.
-const QColor kGood(0x3F, 0xAE, 0x7A);
+const QColor kGood(0x3F, 0xAE, 0x7A); // free-space gauge only, stays green regardless of accent color
 
 QString rgba(const QColor &c, int alpha)
 {
     return QStringLiteral("rgba(%1, %2, %3, %4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
 }
 
-// Flat accent-tinted badge/plate, no gradients - draws whatever QIcon it's given
-// (the item's real themed icon) centered over a soft rounded-rect tint.
+// flat tinted plate behind the file's real icon, no gradients
 class IconPlate : public QWidget
 {
 public:
@@ -66,7 +62,7 @@ private:
     QColor m_tint;
 };
 
-// Two concentric arcs (track + used-fraction fill), replacing the mockup's SVG circles.
+// two concentric arcs - track + fill for the used fraction
 class RadialGauge : public QWidget
 {
 public:
@@ -474,15 +470,15 @@ QWidget *PropertiesDialog::buildMediaPane()
     QVBoxLayout *body = nullptr;
     auto *panel = makePanel(tr("Media"), &body, pane);
 
-    // Width/Height read better combined into one "Dimensions" row than as two rows.
+    // combine width+height into one "Dimensions" row, reads better than two separate rows
     if (m_mediaProps.contains(KFileMetaData::Property::Width) && m_mediaProps.contains(KFileMetaData::Property::Height)) {
         const int w = m_mediaProps.value(KFileMetaData::Property::Width).toInt();
         const int h = m_mediaProps.value(KFileMetaData::Property::Height).toInt();
         addRow(body, tr("Dimensions"), tr("%1 × %2").arg(w).arg(h), panel);
     }
 
-    // Curated priority order across image/audio/video; only properties the extractor
-    // actually found for this file produce a row, so nothing shows as a fabricated blank.
+    // priority order across image/audio/video props - anything the extractor didn't find
+    // for this file just gets skipped below, no blank rows
     static const QList<KFileMetaData::Property::Property> kOrder = {
         KFileMetaData::Property::Title,
         KFileMetaData::Property::Duration,
@@ -551,11 +547,9 @@ void PropertiesDialog::extractMediaProperties()
     QList<KFileMetaData::Extractor *> extractors = collection.fetchExtractors(mimetype);
 
     if (extractors.isEmpty()) {
-        // A couple of container formats resolve, on some shared-mime-info versions, to a
-        // mimetype name the extractor plugins never registered (e.g. .mkv detecting as the
-        // legacy "video/matroska" instead of "video/x-matroska", which is all the ffmpeg
-        // extractor actually declares support for) - retry under the modern name before
-        // giving up on the file entirely.
+        // some shared-mime-info versions detect .mkv etc as the legacy "video/matroska"
+        // instead of "video/x-matroska", which is the only name the ffmpeg extractor knows -
+        // try the modern name before giving up
         static const QHash<QString, QString> kMimeFallbacks = {
             {QStringLiteral("video/matroska"), QStringLiteral("video/x-matroska")},
             {QStringLiteral("audio/matroska"), QStringLiteral("audio/x-matroska")},
