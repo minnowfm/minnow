@@ -15,9 +15,7 @@ TaskProgressPopup::TaskProgressPopup(QWidget *parent)
     setWindowFlags(Qt::Popup);
     setFrameShape(QFrame::StyledPanel);
     setAttribute(Qt::WA_DeleteOnClose);
-    // Fixed width; height still grows with the task list (up to the screen height cap below)
-    // rather than being fixed outright.
-    setFixedWidth(320);
+    setFixedWidth(320); // height is left to grow with the list, capped below
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
@@ -29,10 +27,7 @@ TaskProgressPopup::TaskProgressPopup(QWidget *parent)
     heading->setFont(headingFont);
     layout->addWidget(heading);
 
-    // TaskManager keeps up to 50 history entries, which at full length would make the popup
-    // taller than the screen with nothing scrollable to reach the rest - so it's allowed to
-    // grow naturally (no scrollbar) up to a screen-relative cap, and only scrolls internally
-    // past that point.
+    // history can hold 50 entries, way taller than the screen - cap it and let it scroll past that
     auto *scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);

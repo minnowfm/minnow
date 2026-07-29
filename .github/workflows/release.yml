@@ -1,10 +1,8 @@
 name: Release packages
 
-# Builds .deb, .rpm, a Snap, an Arch binary tarball (for AUR minnow-bin),
-# and a source tarball (for AUR minnow), then attaches all of them to a GitHub Release.
-#
-# Triggers on pushing a tag like v0.1.0. Can also be run manually (workflow_dispatch) against
-# any existing tag to rebuild/re-attach artifacts without cutting a new release.
+# builds .deb/.rpm/snap/arch-tarball/src-tarball and attaches them to a GitHub Release.
+# runs on tag push (v0.1.0 etc), or manually against an existing tag to redo artifacts
+# without cutting a new release.
 on:
   push:
     tags:
@@ -33,9 +31,8 @@ on:
         default: true
 
 jobs:
-  # Every package format's version string is derived from the pushed tag here, instead of
-  # requiring CMakeLists.txt, the RPM spec, the deb changelog, and snapcraft.yaml to all be
-  # hand-bumped in lockstep before tagging a release.
+  # single source of truth for the version string, derived from the tag - saves having to
+  # hand-bump CMakeLists.txt/spec/changelog/snapcraft.yaml all in lockstep
   compute-version:
     runs-on: ubuntu-24.04
     outputs:
@@ -74,8 +71,8 @@ jobs:
     needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_deb }}
     runs-on: ubuntu-24.04
-    # .deb is Debian's native format - build on actual Debian rather than Ubuntu. Trixie
-    # (13, current testing/soon-stable) has current KF6; bookworm (stable) predates it.
+    # building on real Debian, not Ubuntu, since it's a .deb - trixie has current KF6,
+    # bookworm (stable) doesn't yet
     container: debian:trixie
     steps:
       - name: Install build dependencies
@@ -122,8 +119,7 @@ jobs:
     needs: compute-version
     if: ${{ github.event_name == 'push' || inputs.run_snap }}
     runs-on: ubuntu-24.04
-    # `secrets` isn't a recognized context inside a step's `if:` directly - routing it
-    # through a job-level env var is the standard workaround.
+    # can't reference `secrets` directly in a step's `if:`, hence the env var indirection
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
     steps:
@@ -140,8 +136,7 @@ jobs:
         with:
           name: snap-package
           path: ${{ steps.build.outputs.snap }}
-      # Skipped entirely until SNAPCRAFT_STORE_CREDENTIALS is added in repo settings
-      # (from `snapcraft export-login`).
+      # no-op until SNAPCRAFT_STORE_CREDENTIALS gets added to repo secrets (snapcraft export-login)
       - name: Publish to the Snap Store
         if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
         uses: snapcore/action-publish@v1
@@ -152,8 +147,7 @@ jobs:
   create-release:
     needs: [build-arch-binary, build-deb, build-rpm, build-snap]
     runs-on: ubuntu-24.04
-    # The default GITHUB_TOKEN is read-only unless explicitly granted write access here -
-    # this avoids needing to change the repo-wide Actions token permission default.
+    # GITHUB_TOKEN is read-only by default, granting write here beats changing the repo-wide setting
     permissions:
       contents: write
     steps:
@@ -167,8 +161,7 @@ jobs:
         run: |
           mkdir -p release-files
           cp minnow-*-src.tar.gz release-files/
-          # Excludes rpmbuild's auto-generated debuginfo/debugsource/src.rpm sub-packages
-          # and debhelper's auto-generated dbgsym .deb - just the installable packages.
+          # skip the auto-generated debuginfo/debugsource/src.rpm/dbgsym junk, just the real packages
           find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.snap' -o -name '*.tar.gz' \) \
             ! -name '*dbgsym*' ! -name '*debuginfo*' ! -name '*debugsource*' ! -name '*.src.rpm' \
             -exec cp {} release-files/ \;
@@ -178,24 +171,56 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: release-files/*
 
+  update-metainfo:
+    needs: create-release
+    runs-on: ubuntu-24.04
+    # needs write access to commit the regenerated release history back to main
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate release history from GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt \
+            --jq 'sort_by(.publishedAt) | reverse | .[] | "    <release version=\"" + (.tagName | ltrimstr("v")) + "\" date=\"" + (.publishedAt | split("T")[0]) + "\"/>"' \
+            > /tmp/releases_block.txt
+          awk -v rf=/tmp/releases_block.txt '
+            /<releases>/ { print; while ((getline line < rf) > 0) print line; skip=1; next }
+            /<\/releases>/ { skip=0 }
+            !skip
+          ' data/io.github.minnowfm.Minnow.metainfo.xml > /tmp/metainfo.xml.new
+          mv /tmp/metainfo.xml.new data/io.github.minnowfm.Minnow.metainfo.xml
+      - name: Commit updated metainfo back to main
+        # same reasoning as publish-aur's commit-back step below - HEAD is detached at the
+        # tag from the checkout above, so push straight from here isn't safe if main moved
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch origin main
+          git worktree add /tmp/main-worktree origin/main
+          cp data/io.github.minnowfm.Minnow.metainfo.xml /tmp/main-worktree/data/
+          cd /tmp/main-worktree
+          git add data/io.github.minnowfm.Minnow.metainfo.xml
+          git -c user.name="Minnow release bot" -c user.email="noreply@example.com" \
+            commit -m "Update release history in metainfo from GitHub releases" || { echo "no changes to commit"; exit 0; }
+          git push origin HEAD:main
+
   publish-aur:
     if: ${{ github.event_name == 'push' || inputs.run_aur }}
     needs: [compute-version, create-release]
     runs-on: ubuntu-24.04
     container: archlinux:latest
-    # Commits the bumped pkgver/checksums back to main, so the checked-in PKGBUILDs don't
-    # go stale the moment this job updates the AUR copies.
+    # needs write access to commit the bumped pkgver/checksums back to main once AUR's updated
     permissions:
       contents: write
     steps:
       - name: Install tools
         run: |
           pacman -Syu --noconfirm --needed base-devel git openssh pacman-contrib
-          # makepkg/updpkgsums refuse to run as root (the container's default user), so
-          # checksum generation below needs an unprivileged user to run as instead - which
-          # then makes root's own later git commands see the checkout as owned by a different
-          # user ("dubious ownership") unless git is told this container is a one-off and
-          # every directory in it can be trusted.
+          # makepkg/updpkgsums won't run as root, so checksum generation below runs as this
+          # user instead - which then makes root's later git commands complain about
+          # "dubious ownership", hence the safe.directory override too
           useradd -m builder
           git config --global --add safe.directory '*'
       - uses: actions/checkout@v4
@@ -203,9 +228,8 @@ jobs:
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
-          # Written to a fixed /tmp path rather than ~/.ssh - container jobs run steps with
-          # HOME pointed at a GitHub-managed directory, not /root, so "~" here silently
-          # resolved to somewhere the later steps didn't agree on (identity file "not found").
+          # fixed /tmp path instead of ~/.ssh - HOME in this container isn't /root, so "~"
+          # resolved inconsistently between steps and the key kept coming up "not found"
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /tmp/aur_ssh_key
           chmod 600 /tmp/aur_ssh_key
       - name: Bump PKGBUILD versions and checksums
@@ -225,18 +249,15 @@ jobs:
             cp packaging/aur/$pkg/PKGBUILD packaging/aur/$pkg/.SRCINFO "/tmp/aur-$pkg/"
             cd "/tmp/aur-$pkg"
             git add PKGBUILD .SRCINFO
-            # Identity passed explicitly (not via `git config --global`) for the same reason
-            # the SSH key moved to a fixed path - a global ~/.gitconfig depends on the same
-            # unreliable HOME resolution in this container.
+            # passing identity via -c instead of --global, same HOME weirdness as the SSH key above
             git -c user.name="Minnow release bot" -c user.email="noreply@example.com" \
               commit -m "Update to ${{ needs.compute-version.outputs.version }}" || { echo "no changes for $pkg"; cd -; continue; }
             git push origin master
             cd -
           done
       - name: Commit updated PKGBUILDs/.SRCINFOs back to main
-        # The checkout above leaves HEAD detached at the tag, so pushing straight back isn't
-        # safe if main has moved on since - use a separate worktree on main and copy the
-        # freshly updated files into it instead.
+        # HEAD is detached at the tag from the checkout above, can't just push that if main
+        # has moved - use a worktree on main instead and copy the updated files in
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git fetch origin main

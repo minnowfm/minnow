@@ -2,9 +2,8 @@
 
 #include <QFrame>
 
-// A small browser-downloads-style flyout listing active/recent file operations with their
-// progress. Uses Qt::Popup so it closes on any outside click, same as a native menu. Opened
-// from the sidebar's activity button (see MainWindow::showTaskPopup()).
+// downloads-flyout-style list of active/recent operations, Qt::Popup so outside clicks close it.
+// opened from the sidebar activity button, see MainWindow::showTaskPopup()
 class TaskProgressPopup : public QFrame
 {
     Q_OBJECT

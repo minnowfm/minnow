@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Builds an .rpm package from the current source tree.
-# Requires: rpm-build, cmake, gcc-c++, and the BuildRequires listed in minnow.spec.
+# builds an .rpm from the current source tree. needs rpm-build, cmake, gcc-c++, and
+# minnow.spec's BuildRequires
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-# Release CI passes the version from the pushed tag; falls back to the spec's checked-in
-# version for a plain local/manual run of this script.
+# same deal as the deb script - CI sets VERSION, manual runs fall back to the spec file
 VERSION="${VERSION:-$(grep -oP '(?<=^Version:)\s*\K[0-9.]+' "$SCRIPT_DIR/minnow.spec")}"
 
 RPMBUILD_DIR="$(mktemp -d)"

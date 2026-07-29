@@ -15,13 +15,10 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName(QStringLiteral("Minnow"));
     app.setOrganizationName(QStringLiteral("minnow"));
     app.setApplicationVersion(QStringLiteral(MINNOW_VERSION));
-    // Without this, KIO's job-tracking (KUiServerV2JobTracker, used to report copy/move/etc.
-    // progress) warns on every job and can't associate it with this app's window/icon.
-    app.setDesktopFileName(QStringLiteral("io.github.minnowfm.Minnow"));
+    app.setDesktopFileName(QStringLiteral("io.github.minnowfm.Minnow")); // KIO's job tracker warns without this
 
-    // Resolve through the installed icon theme (as KDE apps normally do) rather than
-    // pushing a raw client pixmap over Wayland - the latter was producing corrupted
-    // decoration icon rendering that theme-resolved icons (e.g. Dolphin's) don't hit.
+    // resolve via the icon theme instead of a raw pixmap - the raw pixmap route was giving
+    // corrupted window-decoration icons under Wayland, theme icons (Dolphin's etc) don't hit that
     QIcon icon = QIcon::fromTheme(QStringLiteral("io.github.minnowfm.Minnow"));
     if (icon.isNull())
         icon = QIcon::fromTheme(QStringLiteral("minnow"), QIcon(QStringLiteral(":/icons/minnow.svg")));

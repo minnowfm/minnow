@@ -50,8 +50,7 @@ TaskListWidget::TaskListWidget(QWidget *parent)
 void TaskListWidget::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    // Only width affects the description eliding below - ignore height-only changes (e.g.
-    // rebuild() itself growing/shrinking this widget) to avoid rebuilding in a loop.
+    // ignore height-only changes, otherwise rebuild() resizing us triggers another rebuild()
     if (event->oldSize().width() != event->size().width())
         rebuild();
 }
@@ -100,10 +99,7 @@ void TaskListWidget::rebuild()
         if (task.finished) {
             statusLabel->setText(task.failed ? tr("Failed") : tr("Done"));
         } else if (task.percent > 0) {
-            // Extrapolated from elapsed time and current percent rather than pulled from the
-            // job itself - KJob doesn't expose a time-remaining estimate directly, and this
-            // works the same way for every tracked operation instead of needing per-source
-            // plumbing.
+            // KJob has no ETA of its own, so just extrapolate from elapsed time + percent
             const qint64 etaMs = task.elapsed.elapsed() * (100 - task.percent) / task.percent;
             statusLabel->setText(tr("%1% · %2 left").arg(task.percent).arg(formatDuration(etaMs)));
         } else if (task.percent == 0) {
@@ -120,19 +116,15 @@ void TaskListWidget::rebuild()
         dismissButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
         dismissButton->setAutoRaise(true);
         dismissButton->setFixedSize(20, 20);
-        // Only finished tasks can be dismissed - removeTask() only erases the visible entry,
-        // not the underlying job/work, so dismissing an active one would make it invisible to
-        // hasActiveTasks() and let the app close (or the window "finish closing") while it's
-        // still actually running.
+        // removeTask() just drops the history entry, it doesn't touch the job - dismissing
+        // a running one would make hasActiveTasks() blind to it and let the app close early
         dismissButton->setEnabled(task.finished);
         dismissButton->setToolTip(task.finished ? tr("Remove from history") : tr("Still running"));
         const int taskId = task.id;
         connect(dismissButton, &QToolButton::clicked, this, [taskId] { TaskManager::self()->removeTask(taskId); });
 
-        // Elides the description to whatever room is left after the status text and dismiss
-        // button - recomputed on every rebuild() (including the resizeEvent-triggered one), so
-        // it stays correct whether this widget ends up in the fixed-width popup or the wider
-        // full-page Activity tab.
+        // elide to whatever's left after the status text + button, recomputed each rebuild
+        // so it works in both the fixed-width popup and the wider Activity tab
         const int reserved = statusLabel->sizeHint().width() + dismissButton->width() + headerLayout->spacing() * 2;
         const int available = qMax(40, width() - reserved);
         const QFontMetrics metrics(font());

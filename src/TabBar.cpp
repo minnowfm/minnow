@@ -24,10 +24,7 @@ TabButton::TabButton(const QString &text, QWidget *parent)
 
     auto *closeButton = new QToolButton(this);
     closeButton->setObjectName(QStringLiteral("tabCloseButton"));
-    // A plain text glyph rather than a theme icon - some icon themes draw "window-close" as an
-    // X-in-a-circle, which reads badly at this size (especially in dark color schemes). Text
-    // also automatically follows the palette's text color in both light and dark themes.
-    closeButton->setText(QStringLiteral("✕"));
+    closeButton->setText(QStringLiteral("✕")); // some icon themes draw window-close as an ugly circled X at this size
     QFont closeFont = closeButton->font();
     closeFont.setPointSize(closeFont.pointSize() + 1);
     closeButton->setFont(closeFont);

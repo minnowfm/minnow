@@ -47,8 +47,7 @@
 
 namespace
 {
-// Animates wheel-triggered scrolling instead of jumping straight to the target position,
-// so it reads closer to a browser's smooth scroll than the default per-item/per-line jump.
+// animates wheel scrolling instead of the default per-line jump - closer to how a browser feels
 class SmoothScroller : public QObject
 {
 public:
@@ -105,9 +104,8 @@ BrowserTab::BrowserTab(PlacesSidebar *sidebar, QWidget *parent)
 
     setupViews();
 
-    // m_pathBar is intentionally not added to this layout: MainWindow reparents whichever
-    // tab is active into a shared toolbar slot, so the path bar reads like a single
-    // top-level bar even though each tab keeps its own path bar/history.
+    // m_pathBar isn't added here on purpose - MainWindow reparents the active tab's path bar
+    // into a shared toolbar slot, so it looks like one bar even though every tab has its own
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -207,15 +205,22 @@ void BrowserTab::setupViews()
     m_gridView->viewport()->installEventFilter(this);
     m_listView->viewport()->installEventFilter(this);
 
-    // Keyboard shortcuts (Return/Enter/Delete/Shift+Delete) are installed once at the
-    // MainWindow level and act on whichever tab is active - see MainWindow::setupShortcuts().
-    // Installing them per-view here would misbehave with multiple tabs: a window-scoped
-    // shortcut fires regardless of which tab's view is actually visible.
+    // Return/Delete/etc. shortcuts live at the MainWindow level (setupShortcuts()), not per-view -
+    // a window-scoped shortcut fires no matter which tab is visible, so per-view ones here
+    // would double up across tabs
 
     connect(m_dirLister, &KCoreDirLister::completed, this, &BrowserTab::statusChanged);
     connect(m_dirLister, &KCoreDirLister::itemsAdded, this, [this](const QUrl &, const KFileItemList &items) {
         if (m_showThumbnails)
             requestThumbnails(items);
+    });
+    connect(m_dirLister, &KCoreDirLister::refreshItems, this, [this](const QList<QPair<KFileItem, KFileItem>> &items) {
+        // Rename comes through here (old/new KFileItem pair), not itemsAdded - carry the
+        // cached thumbnail over to the new URL instead of it going blank until a full relist.
+        for (const auto &pair : items) {
+            if (pair.first.url() != pair.second.url())
+                m_proxyModel->renameThumbnail(pair.first.url(), pair.second.url());
+        }
     });
     connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &BrowserTab::onSortIndicatorChanged);
 }
@@ -235,9 +240,7 @@ void BrowserTab::loadUrl(const QUrl &url)
 {
     m_currentUrl = url;
     m_pathBar->setUrl(url);
-    // Otherwise every preview ever generated stays reachable for the tab's whole lifetime -
-    // browsing through many image/video-heavy folders would grow this without bound.
-    m_proxyModel->clearThumbnails();
+    m_proxyModel->clearThumbnails(); // else these just pile up forever across folder switches
     m_dirLister->openUrl(url);
     applySortForCurrentFolder();
     applyViewModeForCurrentFolder();
@@ -396,10 +399,9 @@ bool BrowserTab::eventFilter(QObject *watched, QEvent *event)
         return QWidget::eventFilter(watched, event);
     }
 
-    // Handled here (rather than left to QAbstractItemView's own drop handling) for two
-    // reasons: we need real KIO copy/move instead of an in-model row move, and letting Qt's
-    // default view drop-handling run against a KDirSortFilterProxyModel (which doesn't
-    // support reordering) is what was corrupting the view on same-folder drops.
+    // handled manually because we need a real KIO copy/move, not a model row move - and Qt's
+    // default drop handling against KDirSortFilterProxyModel (no reordering support) was what
+    // corrupted the view on same-folder drops
     if (event->type() == QEvent::DragEnter) {
         auto *dragEvent = static_cast<QDragEnterEvent *>(event);
         if (!dragEvent->mimeData()->hasUrls())
@@ -567,9 +569,8 @@ void BrowserTab::startSearch()
             if (!name.contains(query, Qt::CaseInsensitive))
                 continue;
             if (!m_showHiddenFiles) {
-                // For a nested match, name can be a relative path (e.g. ".config/foo") -
-                // check every segment, not just the basename, so files under a hidden
-                // directory are excluded too, matching the normal folder view.
+                // name can be a relative path for nested matches (".config/foo") so check
+                // every segment, not just the basename - want hidden dirs excluded too
                 bool hidden = false;
                 for (const QString &segment : name.split(QLatin1Char('/'), Qt::SkipEmptyParts)) {
                     if (segment.startsWith(QLatin1Char('.'))) {
@@ -582,9 +583,8 @@ void BrowserTab::startSearch()
             }
 
             const KFileItem item(entry, dirUrl, true, true);
-            // Decide the section from the item's own resolved parent directory rather than
-            // the job's reported url() - for a recursive listing the latter does not
-            // reliably reflect which subdirectory a given batch of entries came from.
+            // use the item's own parent dir, not the job's url() - for a recursive listing
+            // that doesn't reliably match which subfolder a batch actually came from
             const QUrl itemDir = item.url().adjusted(QUrl::RemoveFilename | QUrl::StripTrailingSlash);
             QTreeWidgetItem *parentItem = itemDir == rootDir ? m_searchHereSection : m_searchSubfoldersSection;
 
@@ -634,10 +634,7 @@ void BrowserTab::setShowHiddenFiles(bool show)
     QSettings settings;
     settings.setValue(QStringLiteral("View/ShowHiddenFiles"), show);
 
-    // An active search was already filtered by the old setting - re-run it so enabling
-    // hidden files can surface previously-omitted matches and disabling them actually
-    // drops the ones already shown, instead of leaving stale results in place.
-    if (searchActive())
+    if (searchActive()) // rerun so hidden-file matches show up (or disappear) immediately
         startSearch();
 
     Q_EMIT statusChanged();
@@ -668,16 +665,14 @@ void BrowserTab::requestThumbnails(const QList<KFileItem> &items)
     if (fileItems.isEmpty())
         return;
 
-    // Passing every installed plugin explicitly (instead of KIO's global preview defaults)
-    // means video thumbnails work as soon as a thumbnailer for them - e.g. ffmpegthumbs -
-    // is installed, without depending on whatever the system-wide preview settings default
-    // to (historically off for video, independent of whether a plugin is even present).
+    // pass every installed plugin explicitly instead of relying on KIO's preview defaults,
+    // which have historically shipped with video off regardless of whether ffmpegthumbs etc
+    // is actually installed
     static const QStringList enabledPlugins = KIO::PreviewJob::availablePlugins();
     KIO::PreviewJob *job = KIO::filePreview(fileItems, QSize(128, 128), &enabledPlugins);
     connect(job, &KIO::PreviewJob::gotPreview, m_proxyModel, [this](const KFileItem &item, const QPixmap &preview) {
-        // Thumbnails can be disabled while this job is still in flight - without this
-        // check, previews already in the pipe would keep landing after clearThumbnails()
-        // ran, making the toggle look like it didn't do anything.
+        // thumbnails toggle can flip off mid-job - without this check, previews already
+        // queued keep landing after clearThumbnails() and the toggle looks broken
         if (!m_showThumbnails)
             return;
         m_proxyModel->setThumbnail(item.url(), QIcon(preview));
@@ -808,9 +803,8 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         }
     }
 
-    // Hoisted above the block below (rather than declared with QAction* inline) so the quick
-    // menu built at the end of this function can reuse the same action pointers - a QAction
-    // can be added to more than one QMenu at once, so nothing needs to be built twice.
+    // declared up here so the quick-menu built further down can reuse these same pointers -
+    // a QAction can live in more than one QMenu, no need to build everything twice
     QAction *openAction = nullptr;
     QAction *cutAction = nullptr;
     QAction *copyAction = nullptr;
@@ -822,9 +816,8 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
     if (!selected.isEmpty()) {
         openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
         connect(openAction, &QAction::triggered, this, [this, selectedItems] {
-            // Directories navigate the current tab in place (like double-click) rather than
-            // going through FileOperations::openUrl(), which hands local directories off to
-            // whatever the desktop's default file-manager association is - often a new window.
+            // dirs navigate in place like a double-click - going through openUrl() would
+            // hand it to the desktop's default file-manager association, usually a new window
             bool navigatedInPlace = false;
             for (const KFileItem &item : selectedItems) {
                 if (item.isDir()) {
@@ -856,16 +849,15 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         connect(openWithAction, &QAction::triggered, this, [this, selected] { FileOperations::openWith(selected, this); });
 
         if (!selectedItems.isEmpty()) {
-            // Service-menu/plugin actions (terminal-here variants, K3b, Share, Activities, tags,
-            // ...) are numerous and situational - tucked behind a submenu instead of dumped flat
-            // so the common actions around it stay scannable.
-            QMenu *moreActionsMenu = menu.addMenu(tr("More Actions"));
-            auto *fileItemActions = new KFileItemActions(moreActionsMenu);
+            // service-menu stuff (K3b, Share, Activities, Assign Tags, whatever's installed) -
+            // added straight to the top-level menu rather than wrapped in our own extra "More
+            // Actions" submenu, which just read as a second, confusing "more" next to the
+            // quick-menu's own "Show More Options". KFileItemActions groups its own items into
+            // submenus (Share, Activities, ...) where that makes sense on its own.
+            auto *fileItemActions = new KFileItemActions(&menu);
             fileItemActions->setParentWidget(this);
             fileItemActions->setItemListProperties(KFileItemListProperties(selectedItems));
-            fileItemActions->addActionsTo(moreActionsMenu);
-            if (moreActionsMenu->isEmpty())
-                menu.removeAction(moreActionsMenu->menuAction());
+            fileItemActions->addActionsTo(&menu);
         }
 
         menu.addSeparator();
@@ -1049,8 +1041,7 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         view->selectionModel()->select(QItemSelection(topLeft, bottomRight), QItemSelectionModel::Toggle | QItemSelectionModel::Rows);
     });
 
-    // Properties always sits alone at the very bottom, after every other action - matching
-    // the conventional Windows/Dolphin placement instead of being buried mid-menu.
+    // Properties stays pinned at the very bottom, Dolphin/Windows-style
     menu.addSeparator();
     QAction *propertiesAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-properties")), tr("Properties"));
     KFileItemList propertiesItems = selectedItems;
@@ -1063,12 +1054,9 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         FileOperations::showProperties(propertiesItems, this);
     });
 
-    // `menu` above (the "full" menu) has every action a file manager context menu could
-    // plausibly need, which makes it too long to scan at a glance. What actually opens on
-    // right-click is a short "quick" menu with just the common actions plus a Windows
-    // 11-style "Show More Options" entry that reveals the full menu on demand. The quick
-    // menu reuses the very same QAction pointers (a QAction can live in more than one QMenu
-    // at once) instead of rebuilding equivalent actions with duplicated connect() lambdas.
+    // `menu` has basically everything and is too long to scan - what actually opens on
+    // right-click is this shorter "quick" menu (common actions + a "Show More Options"
+    // entry, Win11-style) built by reusing the same QAction pointers from above
     QMenu quickMenu(this);
     if (openAction)
         quickMenu.addAction(openAction);
@@ -1096,9 +1084,12 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
     quickMenu.addSeparator();
 
     QAction *showMoreAction = quickMenu.addAction(tr("Show More Options"));
-    connect(showMoreAction, &QAction::triggered, this, [&menu, view, pos] {
-        menu.exec(view->viewport()->mapToGlobal(pos));
-    });
 
-    quickMenu.exec(view->viewport()->mapToGlobal(pos));
+    // Checked against exec()'s return value, not a triggered() connection - a connection would
+    // fire while quickMenu's own exec() loop is still running, so menu.exec() would open nested
+    // inside it instead of after it actually closes (looked like "more options" stacked inside
+    // more options).
+    const QAction *chosen = quickMenu.exec(view->viewport()->mapToGlobal(pos));
+    if (chosen == showMoreAction)
+        menu.exec(view->viewport()->mapToGlobal(pos));
 }

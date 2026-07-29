@@ -37,6 +37,16 @@ void ThumbnailProxyModel::setThumbnail(const QUrl &url, const QIcon &icon)
     }
 }
 
+void ThumbnailProxyModel::renameThumbnail(const QUrl &oldUrl, const QUrl &newUrl)
+{
+    const auto it = m_thumbnails.constFind(oldUrl.toString());
+    if (it == m_thumbnails.constEnd())
+        return;
+    const QIcon icon = *it;
+    m_thumbnails.remove(oldUrl.toString());
+    setThumbnail(newUrl, icon);
+}
+
 void ThumbnailProxyModel::clearThumbnails()
 {
     if (m_thumbnails.isEmpty())

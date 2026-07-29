@@ -13,13 +13,10 @@ namespace KIO
 class DirectorySizeJob;
 }
 
-// Custom replacement for KPropertiesDialog: a left icon rail (General / Permissions /
-// Media / Contents) instead of tabs, KPI tiles and a radial gauge for size/free-space,
-// permissions rendered as owner/group/others x read/write/execute badges, and - for a
-// single image/audio/video file - a Media pane populated via KFileMetaData (the same
-// extraction Baloo/Dolphin use) rather than anything hand-rolled. Read-only - renaming
-// and permission editing still go through the sidebar/context-menu actions that already
-// exist rather than being duplicated here.
+// replaces KPropertiesDialog with our own look: icon rail instead of tabs, tiles + a radial
+// gauge for size/free-space, rwx badges for permissions, and a Media pane (KFileMetaData,
+// same as Baloo/Dolphin) for single image/audio/video files. read-only - actual renaming and
+// permission changes still go through the sidebar/context menu, not duplicated here
 class PropertiesDialog : public QDialog
 {
     Q_OBJECT

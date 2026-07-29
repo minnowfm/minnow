@@ -24,9 +24,8 @@ class ListJob;
 class Job;
 }
 
-// One browsing context: its own directory listing/model, grid+list views,
-// breadcrumb path bar, and back/forward/up history. MainWindow hosts several of
-// these in a tab widget; the toolbar and sidebar act on whichever is active.
+// one browsing context - own model/listing, grid+list views, path bar, back/forward history.
+// MainWindow keeps a bunch of these in a tab widget and the toolbar/sidebar act on whichever's active
 class BrowserTab : public QWidget
 {
     Q_OBJECT
@@ -61,9 +60,7 @@ public:
     bool showThumbnails() const { return m_showThumbnails; }
     void setShowThumbnails(bool show);
 
-    // Shared by the context menu and MainWindow's keyboard shortcuts, so both drive the
-    // same single implementation instead of duplicating the selection/dialog logic.
-    void renameSelectionInteractive();
+    void renameSelectionInteractive(); // used by both the context menu and the F2 shortcut
 
 signals:
     void urlChanged(const QUrl &url);

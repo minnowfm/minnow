@@ -93,10 +93,8 @@ void PathBar::enterEditMode()
 {
     m_editLine->setText(m_url.toDisplayString(QUrl::PreferLocalFile));
     m_stack->setCurrentWidget(m_editLine);
-    // setFocus() right after setCurrentWidget() can be dropped - the line edit isn't
-    // actually mapped/visible yet in the same call, so the request silently fails and
-    // keystrokes keep going wherever focus previously was. Deferring it to the next
-    // event loop iteration (after the widget is actually shown) makes it stick.
+    // calling setFocus() right here doesn't stick - the line edit isn't mapped yet in the
+    // same call, so it silently no-ops. push it to the next event loop iteration instead.
     QTimer::singleShot(0, m_editLine, [this] {
         m_editLine->setFocus(Qt::MouseFocusReason);
         m_editLine->selectAll();

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds a .deb package from the current source tree.
-# Requires: dpkg-dev, debhelper, cmake, and the Build-Depends listed in control.
+# builds a .deb from the current source tree. needs dpkg-dev, debhelper, cmake,
+# and whatever's in control's Build-Depends
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,8 +8,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
-# Release CI passes the version from the pushed tag; falls back to the checked-in
-# changelog's top entry for a plain local/manual run of this script.
+# CI sets VERSION from the tag; for a manual run just fall back to the changelog's top entry
 VERSION="${VERSION:-$(dpkg-parsechangelog -l "$SCRIPT_DIR/changelog" -S Version | sed 's/-[^-]*$//')}"
 export DEB_VERSION="$VERSION"
 

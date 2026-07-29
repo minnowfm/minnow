@@ -5,13 +5,18 @@
 #include <QUrl>
 #include <QWidget>
 
-// Thin wrappers around KIO jobs so MainWindow doesn't deal with job wiring directly.
+// wraps KIO jobs so MainWindow doesn't have to deal with job wiring itself
 namespace FileOperations
 {
-// Pure path computation, split out from the job-starting functions below so it's
-// unit-testable without touching the filesystem or needing a running KIO session.
+// kept separate from the actual job-starting calls below so these can be unit tested
+// without a filesystem or a running KIO session
 QUrl renameDestination(const QUrl &url, const QString &newName);
 QUrl mkdirDestination(const QUrl &parentDir, const QString &name);
+// " (2)", " (3)", ... before `extension`, until it doesn't collide with something on disk.
+// `extension` includes the dot, empty for plain directories.
+QString uniqueFilePath(const QString &dirPath, const QString &baseName, const QString &extension);
+// strips .zip/.tar/.tar.gz/etc from fileName (longest match wins), unchanged if no match
+QString archiveBaseName(const QString &fileName);
 
 void copyTo(const QList<QUrl> &sources, const QUrl &destDir, QWidget *parent);
 void moveTo(const QList<QUrl> &sources, const QUrl &destDir, QWidget *parent);

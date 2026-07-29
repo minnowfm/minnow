@@ -28,10 +28,8 @@ private:
     QLabel *m_label = nullptr;
 };
 
-// A fully custom, self-drawn tab strip (no QTabBar/QTabWidget involved), so its layout,
-// spacing, and active/hover styling are entirely under our own control. Hidden whenever
-// it holds one tab or fewer. Pairs with a QStackedWidget that MainWindow keeps in sync
-// by index (add/remove together, in the same order).
+// custom-drawn tab strip, not QTabBar - needed full control over spacing/hover/active look.
+// auto-hides at <=1 tab. MainWindow keeps a QStackedWidget in sync with this by index.
 class TabBar : public QWidget
 {
     Q_OBJECT

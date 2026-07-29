@@ -5,9 +5,8 @@
 class QCheckBox;
 class QComboBox;
 
-// Global defaults (QSettings-backed) for hidden files, thumbnails, icon size, and the
-// preferred terminal. Lives as an ordinary tab (see MainWindow::openSettingsTab()) rather
-// than a modal dialog, so every change applies immediately instead of behind an OK button.
+// hidden files / thumbnails / icon size / terminal defaults, backed by QSettings.
+// it's a regular tab (MainWindow::openSettingsTab()), not a dialog - changes apply live, no OK button
 class SettingsTab : public QWidget
 {
     Q_OBJECT
