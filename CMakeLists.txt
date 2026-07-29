@@ -1,8 +1,26 @@
 cmake_minimum_required(VERSION 3.16)
 project(minnow VERSION 0.1.1 LANGUAGES CXX)
 
-# local/dev version string - CI overrides this from the git tag on release, see release.yml
-set(MINNOW_APP_VERSION "${PROJECT_VERSION}" CACHE STRING "Application version string reported by the app")
+# local/dev version string - CI overrides this from the git tag on release (see release.yml),
+# passing -DMINNOW_APP_VERSION explicitly, which pre-populates the cache entry below and wins
+# over this default. For a plain local build, ask git instead of falling back to the
+# never-bumped project() version above, which would otherwise just say "0.1.1" forever.
+set(MINNOW_DEV_VERSION "${PROJECT_VERSION}")
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --always
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE MINNOW_GIT_DESCRIBE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE MINNOW_GIT_DESCRIBE_RESULT
+    )
+    if(MINNOW_GIT_DESCRIBE_RESULT EQUAL 0 AND MINNOW_GIT_DESCRIBE)
+        string(REGEX REPLACE "^v" "" MINNOW_DEV_VERSION "${MINNOW_GIT_DESCRIBE}")
+    endif()
+endif()
+set(MINNOW_APP_VERSION "${MINNOW_DEV_VERSION}" CACHE STRING "Application version string reported by the app")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
