@@ -171,6 +171,41 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: release-files/*
 
+  update-metainfo:
+    needs: create-release
+    runs-on: ubuntu-24.04
+    # needs write access to commit the regenerated release history back to main
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate release history from GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,publishedAt \
+            --jq 'sort_by(.publishedAt) | reverse | .[] | "    <release version=\"" + (.tagName | ltrimstr("v")) + "\" date=\"" + (.publishedAt | split("T")[0]) + "\"/>"' \
+            > /tmp/releases_block.txt
+          awk -v rf=/tmp/releases_block.txt '
+            /<releases>/ { print; while ((getline line < rf) > 0) print line; skip=1; next }
+            /<\/releases>/ { skip=0 }
+            !skip
+          ' data/io.github.minnowfm.Minnow.metainfo.xml > /tmp/metainfo.xml.new
+          mv /tmp/metainfo.xml.new data/io.github.minnowfm.Minnow.metainfo.xml
+      - name: Commit updated metainfo back to main
+        # same reasoning as publish-aur's commit-back step below - HEAD is detached at the
+        # tag from the checkout above, so push straight from here isn't safe if main moved
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git fetch origin main
+          git worktree add /tmp/main-worktree origin/main
+          cp data/io.github.minnowfm.Minnow.metainfo.xml /tmp/main-worktree/data/
+          cd /tmp/main-worktree
+          git add data/io.github.minnowfm.Minnow.metainfo.xml
+          git -c user.name="Minnow release bot" -c user.email="noreply@example.com" \
+            commit -m "Update release history in metainfo from GitHub releases" || { echo "no changes to commit"; exit 0; }
+          git push origin HEAD:main
+
   publish-aur:
     if: ${{ github.event_name == 'push' || inputs.run_aur }}
     needs: [compute-version, create-release]
