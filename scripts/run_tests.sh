@@ -28,7 +28,10 @@ for exe in "$BUILD_DIR"/test_*; do
 
     echo "${BOLD}${name}${RESET}"
 
-    output="$(QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}" "$exe" 2>/dev/null || true)"
+    set +e
+    output="$(QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}" "$exe" 2>/dev/null)"
+    exe_exit=$?
+    set -e
     suite_pass=0
     suite_fail=0
 
@@ -47,6 +50,11 @@ for exe in "$BUILD_DIR"/test_*; do
                 ;;
         esac
     done <<< "$output"
+
+    if ((exe_exit != 0)); then
+        echo "  ${RED}[✗] process exited with code ${exe_exit} (crashed or was killed before finishing)${RESET}"
+        ((suite_fail++)) || true
+    fi
 
     if ((suite_fail > 0)); then
         echo "  ${DIM}${suite_pass} passed, ${RED}${suite_fail} failed${RESET}${DIM}${RESET}"

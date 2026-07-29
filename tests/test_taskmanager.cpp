@@ -54,7 +54,8 @@ void TaskManagerTest::startTask_appearsInTasksList()
     TaskManager *tm = TaskManager::self();
     const int id = tm->startTask(QStringLiteral("startTask test task"));
 
-    const auto *task = findTask(tm->tasks(), id);
+    const auto tasks = tm->tasks(); // named local, not a temporary - findTask()'s pointer needs it alive
+    const auto *task = findTask(tasks, id);
     QVERIFY(task);
     QCOMPARE(task->description, QStringLiteral("startTask test task"));
     QVERIFY(!task->finished);
@@ -69,7 +70,8 @@ void TaskManagerTest::finishTask_marksFinishedAndFailed()
     const int id = tm->startTask(QStringLiteral("finishTask failure test"));
     tm->finishTask(id, /*failed=*/true);
 
-    const auto *task = findTask(tm->tasks(), id);
+    const auto tasks = tm->tasks();
+    const auto *task = findTask(tasks, id);
     QVERIFY(task);
     QVERIFY(task->finished);
     QVERIFY(task->failed);
@@ -82,7 +84,8 @@ void TaskManagerTest::finishTask_successLeavesFailedFalse()
     const int id = tm->startTask(QStringLiteral("finishTask success test"));
     tm->finishTask(id);
 
-    const auto *task = findTask(tm->tasks(), id);
+    const auto tasks = tm->tasks();
+    const auto *task = findTask(tasks, id);
     QVERIFY(task);
     QVERIFY(task->finished);
     QVERIFY(!task->failed);
@@ -187,7 +190,8 @@ void TaskManagerTest::historyCap_neverEvictsAnActiveTask()
         fillerIds << id;
     }
 
-    const auto *sentinel = findTask(tm->tasks(), activeId);
+    const auto tasks = tm->tasks();
+    const auto *sentinel = findTask(tasks, activeId);
     QVERIFY2(sentinel, "active task must survive history eviction regardless of age");
     QVERIFY(!sentinel->finished);
 
