@@ -15,7 +15,8 @@ build() {
   cmake -B build -S "$pkgname-$pkgver" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
-    -DBUILD_TESTING=OFF
+    -DBUILD_TESTING=OFF \
+    -DMINNOW_APP_VERSION="$pkgver"
   cmake --build build
 }
 
