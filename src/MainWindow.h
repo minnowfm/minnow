@@ -24,6 +24,14 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(const QUrl &startUrl = QUrl(), QWidget *parent = nullptr);
 
+    // Entry points for FileManagerAdaptor (org.freedesktop.FileManager1) - opens a new tab at
+    // the given/containing folder, bringing the window to front. revealItem() additionally
+    // selects the item once the folder's listed; revealItemProperties() opens its Properties
+    // dialog instead of selecting it.
+    void revealFolder(const QUrl &folderUrl);
+    void revealItem(const QUrl &itemUrl);
+    void revealItemProperties(const QUrl &itemUrl);
+
 protected:
     void closeEvent(QCloseEvent *event) override;
 

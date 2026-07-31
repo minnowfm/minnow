@@ -1,8 +1,10 @@
 #include "MainWindow.h"
 #include "ActivityTab.h"
 #include "BrowserTab.h"
+#include "FileManagerAdaptor.h"
 #include "FileOperations.h"
 #include "PathBar.h"
+#include "PathUtils.h"
 #include "PlacesSidebar.h"
 #include "SettingsTab.h"
 #include "TabBar.h"
@@ -12,6 +14,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QColor>
+#include <QDBusConnection>
 #include <QDir>
 #include <QFrame>
 #include <QGridLayout>
@@ -29,6 +32,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <KFileItem>
 #include <KIO/FileUndoManager>
 
 MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
@@ -102,6 +106,45 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     setupShortcuts();
 
     addNewTab(m_startUrl.isValid() ? m_startUrl : QUrl::fromLocalFile(QDir::homePath()));
+
+    // Claims org.freedesktop.FileManager1 so a browser's "Show in folder" reaches Minnow
+    // instead of whatever else answers that name (Dolphin, usually, via lazy D-Bus
+    // activation) - only takes effect if nothing else already owns it; harmless no-op
+    // (e.g. a second Minnow window) if it does.
+    new FileManagerAdaptor(this);
+    QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/freedesktop/FileManager1"), this);
+    QDBusConnection::sessionBus().registerService(QStringLiteral("org.freedesktop.FileManager1"));
+}
+
+void MainWindow::revealFolder(const QUrl &folderUrl)
+{
+    if (!folderUrl.isValid())
+        return;
+    show();
+    raise();
+    activateWindow();
+    addNewTab(folderUrl);
+}
+
+void MainWindow::revealItem(const QUrl &itemUrl)
+{
+    if (!itemUrl.isValid())
+        return;
+    show();
+    raise();
+    activateWindow();
+    if (BrowserTab *tab = addNewTab(parentOf(itemUrl)))
+        tab->selectAndReveal(itemUrl);
+}
+
+void MainWindow::revealItemProperties(const QUrl &itemUrl)
+{
+    if (!itemUrl.isValid())
+        return;
+    show();
+    raise();
+    activateWindow();
+    FileOperations::showProperties({KFileItem(itemUrl)}, this);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

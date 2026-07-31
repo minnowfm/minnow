@@ -43,6 +43,8 @@
 #include <KIO/PreviewJob>
 #include <KJob>
 
+#include <memory>
+
 #include <algorithm>
 
 namespace
@@ -346,6 +348,30 @@ void BrowserTab::activateSearchResult(QTreeWidgetItem *item)
         navigateTo(url);
     else
         FileOperations::openUrl(url, this);
+}
+
+void BrowserTab::selectAndReveal(const QUrl &url)
+{
+    const QModelIndex sourceIndex = m_dirModel->indexForUrl(url);
+    if (sourceIndex.isValid()) {
+        const QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
+        if (!proxyIndex.isValid())
+            return;
+        QAbstractItemView *view = currentView();
+        view->selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        view->setCurrentIndex(proxyIndex);
+        view->scrollTo(proxyIndex);
+        return;
+    }
+
+    // Folder just navigated to and hasn't finished listing yet - retry once it does. The
+    // shared_ptr'd connection handle disconnects just this lambda, not every "completed"
+    // listener (setupViews() has its own, for the status bar).
+    auto connection = std::make_shared<QMetaObject::Connection>();
+    *connection = connect(m_dirLister, &KCoreDirLister::completed, this, [this, url, connection] {
+        QObject::disconnect(*connection);
+        selectAndReveal(url);
+    });
 }
 
 int BrowserTab::itemCount() const
