@@ -14,6 +14,15 @@ compression: lzo
 # heads up: home + removable-media plugs only cover the user's home dir and removable
 # media, not arbitrary host paths like Flatpak's --filesystem=host. browsing /etc or other
 # users' homes won't work here without system-files/personal-files too.
+slots:
+  # strict confinement blocks owning an arbitrary session-bus name without a slot for it -
+  # without this, MainWindow's registerService() for org.freedesktop.FileManager1 just fails
+  # silently and "Show in folder" never reaches Minnow inside the Snap.
+  dbus-filemanager1:
+    interface: dbus
+    bus: session
+    name: org.freedesktop.FileManager1
+
 apps:
   minnow:
     command: usr/bin/minnow
@@ -23,6 +32,8 @@ apps:
       - removable-media
       - mount-observe
       - network
+    slots:
+      - dbus-filemanager1
 
 parts:
   minnow:
