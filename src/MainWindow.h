@@ -69,6 +69,8 @@ private:
     QLineEdit *m_filterEdit = nullptr;
     QWidget *m_navigatorHost = nullptr;
     QHBoxLayout *m_navigatorHostLayout = nullptr;
+    QLabel *m_pseudoPathLabel = nullptr; // stands in for the path bar on Settings/Activity - not a
+                                          // real filesystem location, so no breadcrumb segments
 
     PlacesSidebar *m_sidebar = nullptr;
     TabBar *m_tabBar = nullptr;

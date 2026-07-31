@@ -218,6 +218,12 @@ void MainWindow::setupToolBar()
     m_navigatorHostLayout->setContentsMargins(0, 0, 0, 0);
     toolbar->addWidget(m_navigatorHost);
 
+    // Shown instead of a real PathBar while Settings/Activity is the current tab - browsers
+    // still show something in the address bar on an internal page instead of leaving it blank.
+    m_pseudoPathLabel = new QLabel(this);
+    m_pseudoPathLabel->setObjectName(QStringLiteral("pseudoPathLabel"));
+    m_pseudoPathLabel->hide();
+
     m_filterEdit = new QLineEdit(this);
     m_filterEdit->setPlaceholderText(tr("Search…"));
     m_filterEdit->setClearButtonEnabled(true);
@@ -318,6 +324,10 @@ void MainWindow::onCurrentTabChanged(int index)
         m_filterEdit->setText(tab->filterText());
         m_filterEdit->setEnabled(true);
     } else {
+        m_pseudoPathLabel->setText(m_tabStack->currentWidget() == m_activityTab ? tr("Activity") : tr("Settings"));
+        m_navigatorHostLayout->addWidget(m_pseudoPathLabel);
+        m_pseudoPathLabel->show();
+
         const QSignalBlocker filterBlocker(m_filterEdit);
         m_filterEdit->clear();
         m_filterEdit->setEnabled(false);
@@ -634,6 +644,7 @@ void MainWindow::applyStyle()
                         "QFrame#contentCard { background: %1; border-left: 1px solid %2; border-right: 1px solid %2; "
                         "border-bottom: 1px solid %2; border-top: none; }"
                         "QLineEdit, PathBar { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
+                        "QLabel#pseudoPathLabel { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
                         "QComboBox { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
                         "QComboBox:hover { background: %5; }"
                         "QComboBox::drop-down { border: none; width: 20px; }"
