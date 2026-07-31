@@ -24,6 +24,14 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(const QUrl &startUrl = QUrl(), QWidget *parent = nullptr);
 
+    // Entry points for FileManagerAdaptor (org.freedesktop.FileManager1) - opens a new tab at
+    // the given/containing folder, bringing the window to front. revealItem() additionally
+    // selects the item once the folder's listed; revealItemProperties() opens its Properties
+    // dialog instead of selecting it.
+    void revealFolder(const QUrl &folderUrl, const QString &startupId = QString());
+    void revealItem(const QUrl &itemUrl, const QString &startupId = QString());
+    void revealItemProperties(const QUrl &itemUrl, const QString &startupId = QString());
+
 protected:
     void closeEvent(QCloseEvent *event) override;
 
@@ -61,6 +69,8 @@ private:
     QLineEdit *m_filterEdit = nullptr;
     QWidget *m_navigatorHost = nullptr;
     QHBoxLayout *m_navigatorHostLayout = nullptr;
+    QLabel *m_pseudoPathLabel = nullptr; // stands in for the path bar on Settings/Activity - not a
+                                          // real filesystem location, so no breadcrumb segments
 
     PlacesSidebar *m_sidebar = nullptr;
     TabBar *m_tabBar = nullptr;

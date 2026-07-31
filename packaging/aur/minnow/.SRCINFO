@@ -14,6 +14,7 @@ pkgbase = minnow
 	depends = kfilemetadata
 	depends = karchive
 	depends = knotifications
+	depends = kwindowsystem
 	source = minnow-0.1.4.tar.gz::https://github.com/minnowfm/minnow/archive/refs/tags/v0.1.4.tar.gz
 	sha256sums = 600c8eb08ee8a49c9197c39586b8f13a574a55f03579cf5ab193106d31e97ea4
 

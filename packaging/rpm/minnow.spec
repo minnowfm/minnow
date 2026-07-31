@@ -18,6 +18,7 @@ BuildRequires:  kf6-kio-devel
 BuildRequires:  kf6-kfilemetadata-devel
 BuildRequires:  kf6-karchive-devel
 BuildRequires:  kf6-knotifications-devel
+BuildRequires:  kf6-kwindowsystem-devel
 
 %description
 Minnow is a small, KIO-based file browser built as a lighter alternative

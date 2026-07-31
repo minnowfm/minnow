@@ -62,6 +62,10 @@ public:
 
     void renameSelectionInteractive(); // used by both the context menu and the F2 shortcut
 
+    // Selects and scrolls to `url` in whichever view is active - if the folder hasn't finished
+    // listing yet (e.g. just navigated here), retries once listing completes.
+    void selectAndReveal(const QUrl &url);
+
 signals:
     void urlChanged(const QUrl &url);
     void historyChanged();

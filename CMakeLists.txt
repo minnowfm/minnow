@@ -30,7 +30,7 @@ set(CMAKE_AUTORCC ON)
 
 include(GNUInstallDirs)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent DBus)
 find_package(KF6CoreAddons REQUIRED)
 find_package(KF6ConfigWidgets REQUIRED)
 find_package(KF6WidgetsAddons REQUIRED)
@@ -38,6 +38,7 @@ find_package(KF6KIO REQUIRED)
 find_package(KF6FileMetaData REQUIRED)
 find_package(KF6Archive REQUIRED)
 find_package(KF6Notifications REQUIRED)
+find_package(KF6WindowSystem REQUIRED)
 
 add_library(minnow_core STATIC
     src/PathUtils.cpp
@@ -76,6 +77,8 @@ add_executable(minnow
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h
+    src/FileManagerAdaptor.cpp
+    src/FileManagerAdaptor.h
     src/PlacesSidebar.cpp
     src/PlacesSidebar.h
     src/BrowserTab.cpp
@@ -99,7 +102,7 @@ add_executable(minnow
     src/resources.qrc
 )
 
-target_link_libraries(minnow PRIVATE minnow_core)
+target_link_libraries(minnow PRIVATE minnow_core Qt6::DBus KF6::WindowSystem)
 target_compile_definitions(minnow PRIVATE MINNOW_VERSION="${MINNOW_APP_VERSION}")
 
 # redo() landed in KF6 6.17, Fedora 40's repos are still on older KF6 - same deal, gate it

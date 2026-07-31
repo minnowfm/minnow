@@ -1,8 +1,10 @@
 #include "MainWindow.h"
 #include "ActivityTab.h"
 #include "BrowserTab.h"
+#include "FileManagerAdaptor.h"
 #include "FileOperations.h"
 #include "PathBar.h"
+#include "PathUtils.h"
 #include "PlacesSidebar.h"
 #include "SettingsTab.h"
 #include "TabBar.h"
@@ -12,6 +14,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QColor>
+#include <QDBusConnection>
 #include <QDir>
 #include <QFrame>
 #include <QGridLayout>
@@ -29,7 +32,10 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <KFileItem>
 #include <KIO/FileUndoManager>
+#include <KIO/StatJob>
+#include <KStartupInfo>
 
 MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     : QMainWindow(parent)
@@ -102,6 +108,62 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     setupShortcuts();
 
     addNewTab(m_startUrl.isValid() ? m_startUrl : QUrl::fromLocalFile(QDir::homePath()));
+
+    // Claims org.freedesktop.FileManager1 so a browser's "Show in folder" reaches Minnow
+    // instead of whatever else answers that name (Dolphin, usually, via lazy D-Bus
+    // activation) - only takes effect if nothing else already owns it; harmless no-op
+    // (e.g. a second Minnow window) if it does.
+    new FileManagerAdaptor(this);
+    QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/freedesktop/FileManager1"), this);
+    QDBusConnection::sessionBus().registerService(QStringLiteral("org.freedesktop.FileManager1"));
+}
+
+// Consumes the D-Bus caller's startup notification token (if any) before raising the window,
+// so the window manager honors this specific activation instead of treating it as unsolicited
+// focus-stealing - without it, raise()/activateWindow() can get silently ignored or just flash
+// the taskbar entry, especially under Wayland's stricter policies.
+static void activateWithStartupId(QWidget *window, const QString &startupId)
+{
+    if (!startupId.isEmpty()) {
+        if (QWindow *handle = window->windowHandle())
+            KStartupInfo::setNewStartupId(handle, startupId.toUtf8());
+    }
+    window->show();
+    window->raise();
+    window->activateWindow();
+}
+
+void MainWindow::revealFolder(const QUrl &folderUrl, const QString &startupId)
+{
+    if (!folderUrl.isValid())
+        return;
+    activateWithStartupId(this, startupId);
+    addNewTab(folderUrl);
+}
+
+void MainWindow::revealItem(const QUrl &itemUrl, const QString &startupId)
+{
+    if (!itemUrl.isValid())
+        return;
+    activateWithStartupId(this, startupId);
+    if (BrowserTab *tab = addNewTab(parentOf(itemUrl)))
+        tab->selectAndReveal(itemUrl);
+}
+
+void MainWindow::revealItemProperties(const QUrl &itemUrl, const QString &startupId)
+{
+    if (!itemUrl.isValid())
+        return;
+    activateWithStartupId(this, startupId);
+
+    // KFileItem(url) alone has no stat info (size/date/permissions/owner all unknown) - the
+    // properties dialog needs the real thing, same as it gets from a normal directory listing.
+    KIO::StatJob *job = KIO::stat(itemUrl, KIO::HideProgressInfo);
+    connect(job, &KIO::StatJob::result, this, [this, job] {
+        if (job->error())
+            return;
+        FileOperations::showProperties({KFileItem(job->statResult(), job->url())}, this);
+    });
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -155,6 +217,12 @@ void MainWindow::setupToolBar()
     m_navigatorHostLayout = new QHBoxLayout(m_navigatorHost);
     m_navigatorHostLayout->setContentsMargins(0, 0, 0, 0);
     toolbar->addWidget(m_navigatorHost);
+
+    // Shown instead of a real PathBar while Settings/Activity is the current tab - browsers
+    // still show something in the address bar on an internal page instead of leaving it blank.
+    m_pseudoPathLabel = new QLabel(this);
+    m_pseudoPathLabel->setObjectName(QStringLiteral("pseudoPathLabel"));
+    m_pseudoPathLabel->hide();
 
     m_filterEdit = new QLineEdit(this);
     m_filterEdit->setPlaceholderText(tr("Search…"));
@@ -256,6 +324,10 @@ void MainWindow::onCurrentTabChanged(int index)
         m_filterEdit->setText(tab->filterText());
         m_filterEdit->setEnabled(true);
     } else {
+        m_pseudoPathLabel->setText(m_tabStack->currentWidget() == m_activityTab ? tr("Activity") : tr("Settings"));
+        m_navigatorHostLayout->addWidget(m_pseudoPathLabel);
+        m_pseudoPathLabel->show();
+
         const QSignalBlocker filterBlocker(m_filterEdit);
         m_filterEdit->clear();
         m_filterEdit->setEnabled(false);
@@ -572,6 +644,7 @@ void MainWindow::applyStyle()
                         "QFrame#contentCard { background: %1; border-left: 1px solid %2; border-right: 1px solid %2; "
                         "border-bottom: 1px solid %2; border-top: none; }"
                         "QLineEdit, PathBar { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
+                        "QLabel#pseudoPathLabel { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
                         "QComboBox { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"
                         "QComboBox:hover { background: %5; }"
                         "QComboBox::drop-down { border: none; width: 20px; }"
