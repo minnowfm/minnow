@@ -136,9 +136,15 @@ jobs:
         with:
           name: snap-package
           path: ${{ steps.build.outputs.snap }}
-      # no-op until SNAPCRAFT_STORE_CREDENTIALS gets added to repo secrets (snapcraft export-login)
+      # Some interface declarations (e.g. a dbus slot claiming a well-known name) trigger the
+      # Store's "human review required" gate instead of publishing automatically - that's a
+      # Canonical review queue, not something CI can resolve, so it must not fail this whole
+      # job (and, via needs:, block create-release/publish-aur/update-metainfo for everyone
+      # else). The .snap is still attached to the GitHub Release either way via the artifact
+      # upload above.
       - name: Publish to the Snap Store
         if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        continue-on-error: true
         uses: snapcore/action-publish@v1
         with:
           snap: ${{ steps.build.outputs.snap }}
