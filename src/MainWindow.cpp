@@ -34,6 +34,8 @@
 
 #include <KFileItem>
 #include <KIO/FileUndoManager>
+#include <KIO/StatJob>
+#include <KStartupInfo>
 
 MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     : QMainWindow(parent)
@@ -116,35 +118,52 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.freedesktop.FileManager1"));
 }
 
-void MainWindow::revealFolder(const QUrl &folderUrl)
+// Consumes the D-Bus caller's startup notification token (if any) before raising the window,
+// so the window manager honors this specific activation instead of treating it as unsolicited
+// focus-stealing - without it, raise()/activateWindow() can get silently ignored or just flash
+// the taskbar entry, especially under Wayland's stricter policies.
+static void activateWithStartupId(QWidget *window, const QString &startupId)
+{
+    if (!startupId.isEmpty()) {
+        if (QWindow *handle = window->windowHandle())
+            KStartupInfo::setNewStartupId(handle, startupId.toUtf8());
+    }
+    window->show();
+    window->raise();
+    window->activateWindow();
+}
+
+void MainWindow::revealFolder(const QUrl &folderUrl, const QString &startupId)
 {
     if (!folderUrl.isValid())
         return;
-    show();
-    raise();
-    activateWindow();
+    activateWithStartupId(this, startupId);
     addNewTab(folderUrl);
 }
 
-void MainWindow::revealItem(const QUrl &itemUrl)
+void MainWindow::revealItem(const QUrl &itemUrl, const QString &startupId)
 {
     if (!itemUrl.isValid())
         return;
-    show();
-    raise();
-    activateWindow();
+    activateWithStartupId(this, startupId);
     if (BrowserTab *tab = addNewTab(parentOf(itemUrl)))
         tab->selectAndReveal(itemUrl);
 }
 
-void MainWindow::revealItemProperties(const QUrl &itemUrl)
+void MainWindow::revealItemProperties(const QUrl &itemUrl, const QString &startupId)
 {
     if (!itemUrl.isValid())
         return;
-    show();
-    raise();
-    activateWindow();
-    FileOperations::showProperties({KFileItem(itemUrl)}, this);
+    activateWithStartupId(this, startupId);
+
+    // KFileItem(url) alone has no stat info (size/date/permissions/owner all unknown) - the
+    // properties dialog needs the real thing, same as it gets from a normal directory listing.
+    KIO::StatJob *job = KIO::stat(itemUrl, KIO::HideProgressInfo);
+    connect(job, &KIO::StatJob::result, this, [this, job] {
+        if (job->error())
+            return;
+        FileOperations::showProperties({KFileItem(job->statResult(), job->url())}, this);
+    });
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

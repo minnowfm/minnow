@@ -352,6 +352,16 @@ void BrowserTab::activateSearchResult(QTreeWidgetItem *item)
 
 void BrowserTab::selectAndReveal(const QUrl &url)
 {
+    // A dotfile target would otherwise never appear in indexForUrl() below - the lister is
+    // filtering it out at the default View/ShowHiddenFiles=false setting, so it stays invalid
+    // even after listing completes. Force it visible for this tab only (not persisted - a
+    // reveal request for one hidden file shouldn't flip the user's saved preference).
+    if (!m_showHiddenFiles && url.fileName().startsWith(QLatin1Char('.'))) {
+        m_showHiddenFiles = true;
+        m_dirLister->setShowHiddenFiles(true);
+        m_dirLister->emitChanges();
+    }
+
     const QModelIndex sourceIndex = m_dirModel->indexForUrl(url);
     if (sourceIndex.isValid()) {
         const QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);

@@ -13,6 +13,7 @@ pkgbase = minnow-bin
 	depends = kfilemetadata
 	depends = karchive
 	depends = knotifications
+	depends = kwindowsystem
 	provides = minnow
 	conflicts = minnow
 	source = minnow-bin-0.1.4.tar.gz::https://github.com/minnowfm/minnow/releases/download/v0.1.4/minnow-v0.1.4-x86_64.tar.gz

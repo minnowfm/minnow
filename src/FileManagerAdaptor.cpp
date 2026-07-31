@@ -9,21 +9,18 @@ FileManagerAdaptor::FileManagerAdaptor(MainWindow *window)
 
 void FileManagerAdaptor::ShowFolders(const QStringList &uris, const QString &startupId)
 {
-    Q_UNUSED(startupId);
     for (const QString &uri : uris)
-        m_window->revealFolder(QUrl(uri));
+        m_window->revealFolder(QUrl(uri), startupId);
 }
 
 void FileManagerAdaptor::ShowItems(const QStringList &uris, const QString &startupId)
 {
-    Q_UNUSED(startupId);
     for (const QString &uri : uris)
-        m_window->revealItem(QUrl(uri));
+        m_window->revealItem(QUrl(uri), startupId);
 }
 
 void FileManagerAdaptor::ShowItemProperties(const QStringList &uris, const QString &startupId)
 {
-    Q_UNUSED(startupId);
     for (const QString &uri : uris)
-        m_window->revealItemProperties(QUrl(uri));
+        m_window->revealItemProperties(QUrl(uri), startupId);
 }

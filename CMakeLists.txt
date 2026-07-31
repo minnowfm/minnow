@@ -38,6 +38,7 @@ find_package(KF6KIO REQUIRED)
 find_package(KF6FileMetaData REQUIRED)
 find_package(KF6Archive REQUIRED)
 find_package(KF6Notifications REQUIRED)
+find_package(KF6WindowSystem REQUIRED)
 
 add_library(minnow_core STATIC
     src/PathUtils.cpp
@@ -101,7 +102,7 @@ add_executable(minnow
     src/resources.qrc
 )
 
-target_link_libraries(minnow PRIVATE minnow_core Qt6::DBus)
+target_link_libraries(minnow PRIVATE minnow_core Qt6::DBus KF6::WindowSystem)
 target_compile_definitions(minnow PRIVATE MINNOW_VERSION="${MINNOW_APP_VERSION}")
 
 # redo() landed in KF6 6.17, Fedora 40's repos are still on older KF6 - same deal, gate it

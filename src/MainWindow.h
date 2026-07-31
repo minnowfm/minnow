@@ -28,9 +28,9 @@ public:
     // the given/containing folder, bringing the window to front. revealItem() additionally
     // selects the item once the folder's listed; revealItemProperties() opens its Properties
     // dialog instead of selecting it.
-    void revealFolder(const QUrl &folderUrl);
-    void revealItem(const QUrl &itemUrl);
-    void revealItemProperties(const QUrl &itemUrl);
+    void revealFolder(const QUrl &folderUrl, const QString &startupId = QString());
+    void revealItem(const QUrl &itemUrl, const QString &startupId = QString());
+    void revealItemProperties(const QUrl &itemUrl, const QString &startupId = QString());
 
 protected:
     void closeEvent(QCloseEvent *event) override;
