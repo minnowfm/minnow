@@ -15,6 +15,7 @@
 #include <QCloseEvent>
 #include <QColor>
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDir>
 #include <QFrame>
 #include <QGridLayout>
@@ -109,13 +110,18 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
 
     addNewTab(m_startUrl.isValid() ? m_startUrl : QUrl::fromLocalFile(QDir::homePath()));
 
-    // Claims org.freedesktop.FileManager1 so a browser's "Show in folder" reaches Minnow
-    // instead of whatever else answers that name (Dolphin, usually, via lazy D-Bus
-    // activation) - only takes effect if nothing else already owns it; harmless no-op
-    // (e.g. a second Minnow window) if it does.
+    // Claims org.freedesktop.FileManager1 so a browser's "Show in folder" reaches Minnow. On a
+    // real KDE Plasma session this name is *already* owned at all times by a persistent
+    // "dolphin --daemon" tied to plasma-dolphin.service (a systemd user service, not just
+    // lazy D-Bus activation) - a plain registerService() silently loses that race every time,
+    // running or not. ReplaceExistingService/AllowReplacement actually contests it instead of
+    // just trying once and giving up; KDE's own services generally register the same way, so
+    // Dolphin's daemon should reclaim it automatically once Minnow closes and releases it.
     new FileManagerAdaptor(this);
     QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/freedesktop/FileManager1"), this);
-    QDBusConnection::sessionBus().registerService(QStringLiteral("org.freedesktop.FileManager1"));
+    QDBusConnection::sessionBus().interface()->registerService(QStringLiteral("org.freedesktop.FileManager1"),
+                                                                 QDBusConnectionInterface::ReplaceExistingService,
+                                                                 QDBusConnectionInterface::AllowReplacement);
 }
 
 // Consumes the D-Bus caller's startup notification token (if any) before raising the window,
