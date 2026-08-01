@@ -98,6 +98,20 @@ SettingsTab::SettingsTab(QWidget *parent)
     const QColor windowColor = palette().color(QPalette::Window);
     const QColor mutedColor = windowColor.lightness() < 128 ? QColor(190, 190, 190) : QColor(90, 90, 90);
 
+    // Not something Minnow can fix from inside the app - Dolphin's background service refuses
+    // to hand the org.freedesktop.FileManager1 D-Bus name to anything else, so this is the
+    // only way around it. Every other non-Dolphin file manager on Plasma runs into the same
+    // thing (see README for more detail).
+    auto *showInFolderNote = new QLabel(this);
+    showInFolderNote->setTextFormat(Qt::RichText);
+    showInFolderNote->setWordWrap(true);
+    showInFolderNote->setText(tr("<span style=\"color:%1\">On KDE Plasma, \"Show in folder\" from a browser may still open Dolphin "
+                                  "instead of Minnow - Dolphin's background service doesn't allow other apps to take over that "
+                                  "integration. To make Minnow win instead, run this once in a terminal and log back in: "
+                                  "<code>systemctl --user mask plasma-dolphin.service</code> (reversible with "
+                                  "<code>systemctl --user unmask plasma-dolphin.service</code>).</span>")
+                                   .arg(mutedColor.name()));
+
     auto *divider = new QFrame(this);
     divider->setFrameShape(QFrame::HLine);
     divider->setFrameShadow(QFrame::Sunken);
@@ -121,6 +135,8 @@ SettingsTab::SettingsTab(QWidget *parent)
     layout->addWidget(heading);
     layout->addSpacing(12);
     layout->addLayout(form);
+    layout->addSpacing(16);
+    layout->addWidget(showInFolderNote);
     layout->addStretch(1);
     layout->addWidget(divider);
     layout->addSpacing(16);
