@@ -352,6 +352,16 @@ void BrowserTab::activateSearchResult(QTreeWidgetItem *item)
 
 void BrowserTab::selectAndReveal(const QUrl &url)
 {
+    // A brand-new tab (the common case: "Show in folder" from a browser) needs a few retries
+    // in practice - the KIO job finishing isn't quite the same instant as the model/proxy
+    // chain actually being able to resolve the new row, so a single one-shot attempt would
+    // occasionally lose that race silently (confirmed: retrying the same reveal a second time
+    // once the tab had settled always worked).
+    selectAndRevealAttempt(url, 5);
+}
+
+void BrowserTab::selectAndRevealAttempt(const QUrl &url, int attemptsLeft)
+{
     // A dotfile target would otherwise never appear in indexForUrl() below - the lister is
     // filtering it out at the default View/ShowHiddenFiles=false setting, so it stays invalid
     // even after listing completes. Force it visible for this tab only (not persisted - a
@@ -365,23 +375,34 @@ void BrowserTab::selectAndReveal(const QUrl &url)
     const QModelIndex sourceIndex = m_dirModel->indexForUrl(url);
     if (sourceIndex.isValid()) {
         const QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
-        if (!proxyIndex.isValid())
+        if (proxyIndex.isValid()) {
+            QAbstractItemView *view = currentView();
+            view->selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            view->setCurrentIndex(proxyIndex);
+            view->scrollTo(proxyIndex);
             return;
-        QAbstractItemView *view = currentView();
-        view->selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-        view->setCurrentIndex(proxyIndex);
-        view->scrollTo(proxyIndex);
-        return;
+        }
+        // source model already has the item, but the proxy hasn't mapped it yet - falls
+        // through to the delayed retry below instead of giving up here
     }
 
-    // Folder just navigated to and hasn't finished listing yet - retry once it does. The
-    // shared_ptr'd connection handle disconnects just this lambda, not every "completed"
-    // listener (setupViews() has its own, for the status bar).
-    auto connection = std::make_shared<QMetaObject::Connection>();
-    *connection = connect(m_dirLister, &KCoreDirLister::completed, this, [this, url, connection] {
-        QObject::disconnect(*connection);
-        selectAndReveal(url);
-    });
+    if (attemptsLeft <= 0)
+        return;
+
+    if (!m_dirLister->isFinished()) {
+        // Hasn't finished listing yet - wait for it. The shared_ptr'd connection handle
+        // disconnects just this lambda, not every "completed" listener (setupViews() has its
+        // own, for the status bar).
+        auto connection = std::make_shared<QMetaObject::Connection>();
+        *connection = connect(m_dirLister, &KCoreDirLister::completed, this, [this, url, attemptsLeft, connection] {
+            QObject::disconnect(*connection);
+            selectAndRevealAttempt(url, attemptsLeft - 1);
+        });
+    } else {
+        // Listing's already done but the row still isn't resolvable yet - give the model/proxy
+        // chain one more tick instead of giving up outright.
+        QTimer::singleShot(50, this, [this, url, attemptsLeft] { selectAndRevealAttempt(url, attemptsLeft - 1); });
+    }
 }
 
 int BrowserTab::itemCount() const
