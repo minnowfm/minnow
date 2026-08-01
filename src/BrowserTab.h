@@ -94,6 +94,7 @@ private:
     void loadFolderViewModes();
     void saveFolderViewModes();
     void requestThumbnails(const QList<KFileItem> &items);
+    void selectAndRevealAttempt(const QUrl &url, int attemptsLeft);
     void startSearch();
     void stopSearch();
     void activateSearchResult(QTreeWidgetItem *item);
