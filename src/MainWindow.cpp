@@ -114,14 +114,18 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     // real KDE Plasma session this name is *already* owned at all times by a persistent
     // "dolphin --daemon" tied to plasma-dolphin.service (a systemd user service, not just
     // lazy D-Bus activation) - a plain registerService() silently loses that race every time,
-    // running or not. ReplaceExistingService/AllowReplacement actually contests it instead of
-    // just trying once and giving up; KDE's own services generally register the same way, so
-    // Dolphin's daemon should reclaim it automatically once Minnow closes and releases it.
+    // running or not. ReplaceExistingService/AllowReplacement contests it instead of just
+    // trying once and giving up (though Dolphin's own daemon doesn't actually allow replacement
+    // in practice - see README "Known limitations"). interface() can be null when no usable
+    // D-Bus session exists at all (a minimal WM, a standalone display) - skip quietly instead
+    // of crashing the whole window, same as a plain registerService() would have degraded.
     new FileManagerAdaptor(this);
-    QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/freedesktop/FileManager1"), this);
-    QDBusConnection::sessionBus().interface()->registerService(QStringLiteral("org.freedesktop.FileManager1"),
-                                                                 QDBusConnectionInterface::ReplaceExistingService,
-                                                                 QDBusConnectionInterface::AllowReplacement);
+    if (QDBusConnectionInterface *busInterface = QDBusConnection::sessionBus().interface()) {
+        QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/freedesktop/FileManager1"), this);
+        busInterface->registerService(QStringLiteral("org.freedesktop.FileManager1"),
+                                       QDBusConnectionInterface::ReplaceExistingService,
+                                       QDBusConnectionInterface::AllowReplacement);
+    }
 }
 
 // Consumes the D-Bus caller's startup notification token (if any) before raising the window,

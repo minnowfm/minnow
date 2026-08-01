@@ -20,6 +20,12 @@ bool isSameOrDescendant(const QUrl &candidate, const QUrl &ancestor)
 {
     if (candidate == ancestor)
         return true;
+    // A matching path prefix means nothing across different locations - e.g. dragging
+    // sftp://host-a/home/project onto sftp://host-b/home/project/archive just happens to
+    // mirror the same directory structure on a different host, it's not actual nesting.
+    if (candidate.scheme() != ancestor.scheme() || candidate.host() != ancestor.host()
+        || candidate.port() != ancestor.port() || candidate.userName() != ancestor.userName())
+        return false;
     QString ancestorPath = ancestor.path();
     if (!ancestorPath.endsWith(QLatin1Char('/')))
         ancestorPath += QLatin1Char('/');

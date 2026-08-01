@@ -25,6 +25,7 @@ private Q_SLOTS:
     void dropWouldBeNoOpOrInvalid_trueWhenDroppedOntoItself();
     void dropWouldBeNoOpOrInvalid_trueWhenDroppedIntoOwnSubfolder();
     void dropWouldBeNoOpOrInvalid_falseForUnrelatedSimilarlyNamedFolder();
+    void dropWouldBeNoOpOrInvalid_falseForMatchingPathOnDifferentHost();
 };
 
 void PathUtilsTest::parentOf_basic()
@@ -125,6 +126,16 @@ void PathUtilsTest::dropWouldBeNoOpOrInvalid_falseForUnrelatedSimilarlyNamedFold
     const QUrl folder = QUrl::fromLocalFile(QStringLiteral("/home/user/Documents"));
     const QUrl sibling = QUrl::fromLocalFile(QStringLiteral("/home/user/Documents2"));
     QVERIFY(!dropWouldBeNoOpOrInvalid({folder}, sibling));
+}
+
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_falseForMatchingPathOnDifferentHost()
+{
+    // a matching path prefix across two different remote hosts is coincidental, not nesting -
+    // dragging sftp://host-a/home/project onto sftp://host-b/home/project/archive is a real,
+    // valid move/copy and must not be silently suppressed
+    const QUrl source(QStringLiteral("sftp://host-a/home/project"));
+    const QUrl dest(QStringLiteral("sftp://host-b/home/project/archive"));
+    QVERIFY(!dropWouldBeNoOpOrInvalid({source}, dest));
 }
 
 QTEST_MAIN(PathUtilsTest)
