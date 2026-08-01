@@ -19,9 +19,12 @@ private Q_SLOTS:
     void mkdirDestination_basic();
     void mkdirDestination_trailingSlash();
 
-    void allUrlsAlreadyIn_trueWhenAllInDestination();
-    void allUrlsAlreadyIn_falseWhenAnyElsewhere();
-    void allUrlsAlreadyIn_trueForEmptyList();
+    void dropWouldBeNoOpOrInvalid_trueWhenAllInDestination();
+    void dropWouldBeNoOpOrInvalid_falseWhenElsewhereAndUnrelated();
+    void dropWouldBeNoOpOrInvalid_trueForEmptyList();
+    void dropWouldBeNoOpOrInvalid_trueWhenDroppedOntoItself();
+    void dropWouldBeNoOpOrInvalid_trueWhenDroppedIntoOwnSubfolder();
+    void dropWouldBeNoOpOrInvalid_falseForUnrelatedSimilarlyNamedFolder();
 };
 
 void PathUtilsTest::parentOf_basic()
@@ -76,29 +79,52 @@ void PathUtilsTest::mkdirDestination_trailingSlash()
     QCOMPARE(dest.path(), QStringLiteral("/home/user/NewFolder"));
 }
 
-void PathUtilsTest::allUrlsAlreadyIn_trueWhenAllInDestination()
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_trueWhenAllInDestination()
 {
     const QUrl dest = QUrl::fromLocalFile(QStringLiteral("/home/user"));
     const QList<QUrl> urls = {
         QUrl::fromLocalFile(QStringLiteral("/home/user/a.txt")),
         QUrl::fromLocalFile(QStringLiteral("/home/user/b.txt")),
     };
-    QVERIFY(allUrlsAlreadyIn(urls, dest));
+    QVERIFY(dropWouldBeNoOpOrInvalid(urls, dest));
 }
 
-void PathUtilsTest::allUrlsAlreadyIn_falseWhenAnyElsewhere()
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_falseWhenElsewhereAndUnrelated()
 {
-    const QUrl dest = QUrl::fromLocalFile(QStringLiteral("/home/user"));
+    const QUrl dest = QUrl::fromLocalFile(QStringLiteral("/home/user/Downloads"));
     const QList<QUrl> urls = {
         QUrl::fromLocalFile(QStringLiteral("/home/user/a.txt")),
         QUrl::fromLocalFile(QStringLiteral("/home/user/Documents/b.txt")),
     };
-    QVERIFY(!allUrlsAlreadyIn(urls, dest));
+    QVERIFY(!dropWouldBeNoOpOrInvalid(urls, dest));
 }
 
-void PathUtilsTest::allUrlsAlreadyIn_trueForEmptyList()
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_trueForEmptyList()
 {
-    QVERIFY(allUrlsAlreadyIn({}, QUrl::fromLocalFile(QStringLiteral("/home/user"))));
+    QVERIFY(dropWouldBeNoOpOrInvalid({}, QUrl::fromLocalFile(QStringLiteral("/home/user"))));
+}
+
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_trueWhenDroppedOntoItself()
+{
+    // dragging a folder and dropping it onto its own icon/sidebar entry - destDir ends up
+    // being the dragged folder's own URL
+    const QUrl folder = QUrl::fromLocalFile(QStringLiteral("/home/user/Projects"));
+    QVERIFY(dropWouldBeNoOpOrInvalid({folder}, folder));
+}
+
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_trueWhenDroppedIntoOwnSubfolder()
+{
+    const QUrl folder = QUrl::fromLocalFile(QStringLiteral("/home/user/Projects"));
+    const QUrl subfolder = QUrl::fromLocalFile(QStringLiteral("/home/user/Projects/minnow/src"));
+    QVERIFY(dropWouldBeNoOpOrInvalid({folder}, subfolder));
+}
+
+void PathUtilsTest::dropWouldBeNoOpOrInvalid_falseForUnrelatedSimilarlyNamedFolder()
+{
+    // "/home/user/Documents2" must not be mistaken for a descendant of "/home/user/Documents"
+    const QUrl folder = QUrl::fromLocalFile(QStringLiteral("/home/user/Documents"));
+    const QUrl sibling = QUrl::fromLocalFile(QStringLiteral("/home/user/Documents2"));
+    QVERIFY(!dropWouldBeNoOpOrInvalid({folder}, sibling));
 }
 
 QTEST_MAIN(PathUtilsTest)

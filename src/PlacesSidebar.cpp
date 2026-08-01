@@ -686,7 +686,7 @@ void PlacesSidebar::dropEvent(QDropEvent *event)
     }
 
     const QList<QUrl> urls = event->mimeData()->urls();
-    if (allUrlsAlreadyIn(urls, destDir)) {
+    if (dropWouldBeNoOpOrInvalid(urls, destDir)) {
         event->acceptProposedAction();
         return;
     }

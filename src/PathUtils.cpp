@@ -14,7 +14,24 @@ QUrl parentOf(const QUrl &url)
     return u;
 }
 
-bool allUrlsAlreadyIn(const QList<QUrl> &urls, const QUrl &destDir)
+namespace
 {
-    return std::all_of(urls.constBegin(), urls.constEnd(), [&destDir](const QUrl &url) { return parentOf(url) == destDir; });
+bool isSameOrDescendant(const QUrl &candidate, const QUrl &ancestor)
+{
+    if (candidate == ancestor)
+        return true;
+    QString ancestorPath = ancestor.path();
+    if (!ancestorPath.endsWith(QLatin1Char('/')))
+        ancestorPath += QLatin1Char('/');
+    return candidate.path().startsWith(ancestorPath);
+}
+}
+
+bool dropWouldBeNoOpOrInvalid(const QList<QUrl> &urls, const QUrl &destDir)
+{
+    const bool allAlreadyThere =
+        std::all_of(urls.constBegin(), urls.constEnd(), [&destDir](const QUrl &url) { return parentOf(url) == destDir; });
+    const bool wouldNestInsideItself =
+        std::any_of(urls.constBegin(), urls.constEnd(), [&destDir](const QUrl &url) { return isSameOrDescendant(destDir, url); });
+    return allAlreadyThere || wouldNestInsideItself;
 }

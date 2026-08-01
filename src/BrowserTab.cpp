@@ -467,7 +467,7 @@ bool BrowserTab::eventFilter(QObject *watched, QEvent *event)
         }
 
         const QList<QUrl> urls = dropEvent->mimeData()->urls();
-        if (!allUrlsAlreadyIn(urls, destDir)) {
+        if (!dropWouldBeNoOpOrInvalid(urls, destDir)) {
             if (dropEvent->proposedAction() == Qt::MoveAction)
                 FileOperations::moveTo(urls, destDir, this);
             else
@@ -483,7 +483,7 @@ bool BrowserTab::eventFilter(QObject *watched, QEvent *event)
 void BrowserTab::onUrlsDropped(const QUrl &destination, QDropEvent *event)
 {
     const QList<QUrl> urls = event->mimeData()->urls();
-    if (urls.isEmpty() || allUrlsAlreadyIn(urls, destination))
+    if (urls.isEmpty() || dropWouldBeNoOpOrInvalid(urls, destination))
         return;
     if (event->proposedAction() == Qt::MoveAction)
         FileOperations::moveTo(urls, destination, this);
