@@ -18,6 +18,10 @@ private Q_SLOTS:
 
     void mkdirDestination_basic();
     void mkdirDestination_trailingSlash();
+
+    void allUrlsAlreadyIn_trueWhenAllInDestination();
+    void allUrlsAlreadyIn_falseWhenAnyElsewhere();
+    void allUrlsAlreadyIn_trueForEmptyList();
 };
 
 void PathUtilsTest::parentOf_basic()
@@ -70,6 +74,31 @@ void PathUtilsTest::mkdirDestination_trailingSlash()
     const QUrl parent = QUrl::fromLocalFile(QStringLiteral("/home/user/"));
     const QUrl dest = FileOperations::mkdirDestination(parent, QStringLiteral("NewFolder"));
     QCOMPARE(dest.path(), QStringLiteral("/home/user/NewFolder"));
+}
+
+void PathUtilsTest::allUrlsAlreadyIn_trueWhenAllInDestination()
+{
+    const QUrl dest = QUrl::fromLocalFile(QStringLiteral("/home/user"));
+    const QList<QUrl> urls = {
+        QUrl::fromLocalFile(QStringLiteral("/home/user/a.txt")),
+        QUrl::fromLocalFile(QStringLiteral("/home/user/b.txt")),
+    };
+    QVERIFY(allUrlsAlreadyIn(urls, dest));
+}
+
+void PathUtilsTest::allUrlsAlreadyIn_falseWhenAnyElsewhere()
+{
+    const QUrl dest = QUrl::fromLocalFile(QStringLiteral("/home/user"));
+    const QList<QUrl> urls = {
+        QUrl::fromLocalFile(QStringLiteral("/home/user/a.txt")),
+        QUrl::fromLocalFile(QStringLiteral("/home/user/Documents/b.txt")),
+    };
+    QVERIFY(!allUrlsAlreadyIn(urls, dest));
+}
+
+void PathUtilsTest::allUrlsAlreadyIn_trueForEmptyList()
+{
+    QVERIFY(allUrlsAlreadyIn({}, QUrl::fromLocalFile(QStringLiteral("/home/user"))));
 }
 
 QTEST_MAIN(PathUtilsTest)

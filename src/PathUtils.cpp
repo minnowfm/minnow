@@ -1,5 +1,7 @@
 #include "PathUtils.h"
 
+#include <algorithm>
+
 QUrl parentOf(const QUrl &url)
 {
     QUrl u = url;
@@ -10,4 +12,9 @@ QUrl parentOf(const QUrl &url)
     path = (idx <= 0) ? QStringLiteral("/") : path.left(idx);
     u.setPath(path);
     return u;
+}
+
+bool allUrlsAlreadyIn(const QList<QUrl> &urls, const QUrl &destDir)
+{
+    return std::all_of(urls.constBegin(), urls.constEnd(), [&destDir](const QUrl &url) { return parentOf(url) == destDir; });
 }
