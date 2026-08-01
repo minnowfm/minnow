@@ -1,5 +1,6 @@
 #include "PlacesSidebar.h"
 #include "FileOperations.h"
+#include "PathUtils.h"
 
 #include <QComboBox>
 #include <QDialog>
@@ -685,6 +686,10 @@ void PlacesSidebar::dropEvent(QDropEvent *event)
     }
 
     const QList<QUrl> urls = event->mimeData()->urls();
+    if (dropWouldBeNoOpOrInvalid(urls, destDir)) {
+        event->acceptProposedAction();
+        return;
+    }
     if (event->proposedAction() == Qt::MoveAction)
         FileOperations::moveTo(urls, destDir, this);
     else

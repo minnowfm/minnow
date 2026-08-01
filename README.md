@@ -65,6 +65,17 @@ cmake --install build --prefix /usr/local
 ./build/minnow /some/path   # opens a specific directory (or a file's parent directory)
 ```
 
+## Known limitations
+
+**On KDE Plasma, "Show in folder" from a browser may still open Dolphin instead of Minnow, even with Minnow set as your default file manager.** This isn't a Minnow bug - browsers use the `org.freedesktop.FileManager1` D-Bus interface for this (not just the `inode/directory` MIME association), and on Plasma that name is held from login by a persistent `dolphin --daemon` (tied to `plasma-dolphin.service`) that refuses to hand it over to anything else. Every non-Dolphin file manager on Plasma runs into the same thing. The only fix is disabling Dolphin's background service:
+
+```sh
+systemctl --user mask plasma-dolphin.service
+# then log out and back in
+```
+
+Reversible with `systemctl --user unmask plasma-dolphin.service`.
+
 ## Testing
 
 ```sh
