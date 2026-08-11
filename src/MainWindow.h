@@ -3,6 +3,7 @@
 #include <QMainWindow>
 #include <QUrl>
 
+class QAction;
 class QToolButton;
 class QLineEdit;
 class QLabel;
@@ -62,10 +63,14 @@ private:
     void closeTab(int index);
     void updateChromeForCurrentTab();
     void updateContentCardCorners();
+    void rebuildDiskSummary();
 
     QToolButton *m_backButton = nullptr;
     QToolButton *m_forwardButton = nullptr;
     QToolButton *m_upButton = nullptr;
+    QToolButton *m_emptyTrashButton = nullptr; // only shown while the current tab is browsing trash:/
+    QAction *m_emptyTrashAction = nullptr; // the toolbar's own QWidgetAction for that button - toggle
+                                            // visibility through this, not the button, or QToolBar ignores it
     QLineEdit *m_filterEdit = nullptr;
     QWidget *m_navigatorHost = nullptr;
     QHBoxLayout *m_navigatorHostLayout = nullptr;
@@ -73,6 +78,8 @@ private:
                                           // real filesystem location, so no breadcrumb segments
 
     PlacesSidebar *m_sidebar = nullptr;
+    QVBoxLayout *m_sidebarLayout = nullptr;
+    QWidget *m_diskSummaryContainer = nullptr;
     TabBar *m_tabBar = nullptr;
     QStackedWidget *m_tabStack = nullptr;
     QFrame *m_contentCard = nullptr;
