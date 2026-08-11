@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "ActivityTab.h"
 #include "BrowserTab.h"
+#include "DiskUsageIndicator.h"
 #include "FileManagerAdaptor.h"
 #include "FileOperations.h"
 #include "PathBar.h"
@@ -17,8 +18,8 @@
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDir>
+#include <QFont>
 #include <QFrame>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -27,6 +28,7 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSizePolicy>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStorageInfo>
 #include <QToolBar>
@@ -52,21 +54,20 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
     applyStyle();
 
     auto *central = new QWidget(this);
-    auto *grid = new QGridLayout(central);
-    grid->setContentsMargins(0, 8, 8, 8);
-    grid->setHorizontalSpacing(8);
-    grid->setVerticalSpacing(0);
+    auto *outerLayout = new QVBoxLayout(central);
+    outerLayout->setContentsMargins(0, 8, 8, 8);
+    outerLayout->setSpacing(0);
 
-    // empty spacer at (0,0) so the tab bar at (0,1) lines up with the content card's left
-    // edge at (1,1) - the grid syncs column widths across rows for us, sidebar width drives it
-    grid->addWidget(new QWidget(central), 0, 0);
-    grid->addWidget(m_tabBar, 0, 1);
+    auto *splitter = new QSplitter(Qt::Horizontal, central);
+    splitter->setChildrenCollapsible(false); // dragging all the way in shouldn't be able to hide the sidebar
 
-    auto *sidebarContainer = new QWidget(central);
+    auto *sidebarContainer = new QWidget(splitter);
+    sidebarContainer->setMinimumWidth(160); // the actual "can't make it too small" floor
     auto *sidebarLayout = new QVBoxLayout(sidebarContainer);
     sidebarLayout->setContentsMargins(0, 0, 0, 0);
     sidebarLayout->setSpacing(0);
     sidebarLayout->addWidget(m_sidebar, 1);
+    m_sidebarLayout = sidebarLayout;
 
     auto *bottomRow = new QWidget(sidebarContainer);
     auto *bottomRowLayout = new QHBoxLayout(bottomRow);
@@ -90,18 +91,38 @@ MainWindow::MainWindow(const QUrl &startUrl, QWidget *parent)
 
     sidebarLayout->addWidget(bottomRow);
 
-    grid->addWidget(sidebarContainer, 1, 0);
+    splitter->addWidget(sidebarContainer);
 
-    m_contentCard = new QFrame(this);
+    rebuildDiskSummary();
+
+    // tab bar + content card share the splitter's right pane, stacked vertically, so they stay
+    // aligned with each other without needing the old grid's column-syncing trick
+    auto *rightPane = new QWidget(splitter);
+    auto *rightLayout = new QVBoxLayout(rightPane);
+    rightLayout->setContentsMargins(8, 0, 0, 0);
+    rightLayout->setSpacing(0);
+    rightLayout->addWidget(m_tabBar);
+
+    m_contentCard = new QFrame(rightPane);
     m_contentCard->setObjectName(QStringLiteral("contentCard"));
     m_cardLayout = new QVBoxLayout(m_contentCard);
     m_cardLayout->setContentsMargins(6, 6, 6, 6);
     m_cardLayout->setSpacing(0);
     m_cardLayout->addWidget(m_tabStack, 1);
-    grid->addWidget(m_contentCard, 1, 1);
+    rightLayout->addWidget(m_contentCard, 1);
 
-    grid->setRowStretch(1, 1);
-    grid->setColumnStretch(1, 1);
+    splitter->addWidget(rightPane);
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+
+    const int sidebarWidth = settings.value(QStringLiteral("MainWindow/SidebarWidth"), 200).toInt();
+    splitter->setSizes({sidebarWidth, width() - sidebarWidth});
+    connect(splitter, &QSplitter::splitterMoved, this, [splitter] {
+        QSettings settings;
+        settings.setValue(QStringLiteral("MainWindow/SidebarWidth"), splitter->sizes().constFirst());
+    });
+
+    outerLayout->addWidget(splitter);
 
     setupStatusBar();
     setCentralWidget(central);
@@ -218,9 +239,18 @@ void MainWindow::setupToolBar()
     m_upButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
     m_upButton->setToolTip(tr("Up"));
 
+    m_emptyTrashButton = new QToolButton(this);
+    m_emptyTrashButton->setIcon(QIcon::fromTheme(QStringLiteral("user-trash")));
+    m_emptyTrashButton->setToolTip(tr("Empty Trash"));
+
     toolbar->addWidget(m_backButton);
     toolbar->addWidget(m_forwardButton);
     toolbar->addWidget(m_upButton);
+    // toggle m_emptyTrashAction's visibility, not the button's own hide()/show() - QToolBar wraps
+    // addWidget() widgets in its own QWidgetAction and manages visibility through that, so toggling
+    // the widget directly gets silently overridden on the next toolbar layout pass
+    m_emptyTrashAction = toolbar->addWidget(m_emptyTrashButton);
+    m_emptyTrashAction->setVisible(false); // only shown while browsing trash:/, see updateChromeForCurrentTab()
 
     m_navigatorHost = new QWidget(this);
     m_navigatorHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -243,6 +273,7 @@ void MainWindow::setupToolBar()
     connect(m_backButton, &QToolButton::clicked, this, &MainWindow::goBack);
     connect(m_forwardButton, &QToolButton::clicked, this, &MainWindow::goForward);
     connect(m_upButton, &QToolButton::clicked, this, &MainWindow::goUp);
+    connect(m_emptyTrashButton, &QToolButton::clicked, this, [this] { FileOperations::emptyTrash(this); });
     connect(m_filterEdit, &QLineEdit::textChanged, this, &MainWindow::onFilterTextChanged);
 }
 
@@ -253,6 +284,50 @@ void MainWindow::setupSidebar()
         if (auto *tab = currentTab())
             tab->navigateTo(url);
     });
+}
+
+// Builds the "/" disk-usage summary and places it above the sidebar, above the settings/activity
+// row, or not at all, per Sidebar/DiskSummaryPosition. Just "/" - "/home" isn't shown here since
+// it already gets its own inline indicator on the "Home" place item in PlacesSidebar.
+// Torn down and rebuilt from scratch each time rather than updated in place - it's just a couple
+// of small widgets, and this keeps position/style changes from needing separate code paths.
+void MainWindow::rebuildDiskSummary()
+{
+    delete m_diskSummaryContainer;
+    m_diskSummaryContainer = nullptr;
+
+    QSettings settings;
+    const auto position = static_cast<SettingsTab::DiskSummaryPosition>(
+        settings.value(QStringLiteral("Sidebar/DiskSummaryPosition"), static_cast<int>(SettingsTab::DiskSummaryPosition::Hidden)).toInt());
+    if (position == SettingsTab::DiskSummaryPosition::Hidden)
+        return;
+
+    const auto style = settings.value(QStringLiteral("Sidebar/DiskUsageStyle"), static_cast<int>(DiskUsageIndicator::Style::Text)).toInt()
+                == static_cast<int>(DiskUsageIndicator::Style::Bar)
+        ? DiskUsageIndicator::Style::Bar
+        : DiskUsageIndicator::Style::Text;
+
+    m_diskSummaryContainer = new QWidget();
+    auto *layout = new QVBoxLayout(m_diskSummaryContainer);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setSpacing(4);
+
+    auto *nameLabel = new QLabel(tr("Root (/)"), m_diskSummaryContainer);
+    QFont font = nameLabel->font();
+    font.setPointSizeF(font.pointSizeF() * 0.82);
+    font.setBold(true);
+    nameLabel->setFont(font);
+    layout->addWidget(nameLabel);
+
+    auto *indicator = new DiskUsageIndicator(m_diskSummaryContainer);
+    indicator->setStyle(style);
+    indicator->setPath(QStringLiteral("/"));
+    layout->addWidget(indicator);
+
+    if (position == SettingsTab::DiskSummaryPosition::Top)
+        m_sidebarLayout->insertWidget(0, m_diskSummaryContainer);
+    else
+        m_sidebarLayout->insertWidget(m_sidebarLayout->count() - 1, m_diskSummaryContainer); // just above bottomRow
 }
 
 void MainWindow::setupTabs()
@@ -384,6 +459,14 @@ void MainWindow::openSettingsTab()
                 tab->setIconSize(size);
         }
     });
+    connect(m_settingsTab, &SettingsTab::diskUsageEnabledChanged, this, [this](bool enabled) {
+        m_sidebar->setDriveDiskUsageEnabled(enabled);
+    });
+    connect(m_settingsTab, &SettingsTab::diskUsageStyleChanged, this, [this](DiskUsageIndicator::Style style) {
+        m_sidebar->setDriveDiskUsageStyle(style);
+        rebuildDiskSummary();
+    });
+    connect(m_settingsTab, &SettingsTab::diskSummaryPositionChanged, this, [this] { rebuildDiskSummary(); });
 
     m_tabStack->addWidget(m_settingsTab);
     const int index = m_tabBar->addTab(tr("Settings"));
@@ -460,6 +543,7 @@ void MainWindow::updateChromeForCurrentTab()
         m_backButton->setEnabled(false);
         m_forwardButton->setEnabled(false);
         m_upButton->setEnabled(false);
+        m_emptyTrashAction->setVisible(false);
         setWindowTitle(m_tabStack->currentWidget() == m_activityTab ? tr("Activity") : tr("Settings"));
         m_itemCountLabel->clear();
         m_freeSpaceLabel->clear();
@@ -469,6 +553,7 @@ void MainWindow::updateChromeForCurrentTab()
     m_backButton->setEnabled(tab->canGoBack());
     m_forwardButton->setEnabled(tab->canGoForward());
     m_upButton->setEnabled(tab->canGoUp());
+    m_emptyTrashAction->setVisible(tab->currentUrl().scheme() == QLatin1String("trash"));
     setWindowTitle(tab->displayName());
     m_sidebar->setCurrentUrl(tab->currentUrl());
 
@@ -621,7 +706,13 @@ void MainWindow::setupShortcuts()
     connect(trashShortcut, &QShortcut::activated, this, [this] {
         if (auto *tab = currentTab()) {
             const QList<QUrl> urls = tab->selectedUrls();
-            if (!urls.isEmpty())
+            if (urls.isEmpty())
+                return;
+            // already in Trash - "move to trash" a second time doesn't mean anything, so Delete
+            // here does what Shift+Delete does everywhere else instead
+            if (tab->currentUrl().scheme() == QLatin1String("trash"))
+                FileOperations::remove(urls, this);
+            else
                 FileOperations::trash(urls, this);
         }
     });
@@ -651,6 +742,7 @@ void MainWindow::applyStyle()
         QStringLiteral("QMainWindow { background: palette(window); }"
                         "QToolBar { background: palette(window); border: none; spacing: 4px; padding: 4px; }"
                         "PlacesSidebar { background: palette(window); border: none; }"
+                        "QSplitter::handle { background: transparent; }"
                         "QFrame#contentCard { background: %1; border-left: 1px solid %2; border-right: 1px solid %2; "
                         "border-bottom: 1px solid %2; border-top: none; }"
                         "QLineEdit, PathBar { background: %1; border: 1px solid %2; border-radius: 10px; padding: 4px 10px; }"

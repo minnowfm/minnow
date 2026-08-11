@@ -20,7 +20,12 @@ Rules-Requires-Root: no
 
 Package: minnow
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+# kio6 isn't pulled in by ${shlibs:Depends} - minnow links libkf6kiocore6 (the library), but the
+# actual KIO worker binaries (kioworker6/kiod6, which do the real work behind copy/move/trash/mkdir/
+# rename) live in the separate kio6 package, which libkf6kiocore6 doesn't depend on. Without this,
+# installing minnow on a system that doesn't already have some other KDE app pulling in kio6 leaves
+# every file operation silently hanging - caught via a from-scratch distrobox Debian container.
+Depends: ${shlibs:Depends}, ${misc:Depends}, kio6
 Description: A simple, lightweight file manager for KDE
  Minnow is a small, KIO-based file browser built as a lighter alternative
  to Dolphin: grid and list views, a customizable places sidebar, and

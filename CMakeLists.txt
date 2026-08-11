@@ -95,6 +95,8 @@ add_executable(minnow
     src/TaskListWidget.h
     src/IndeterminateBar.cpp
     src/IndeterminateBar.h
+    src/DiskUsageIndicator.cpp
+    src/DiskUsageIndicator.h
     src/TaskProgressPopup.cpp
     src/TaskProgressPopup.h
     src/ActivityTab.cpp

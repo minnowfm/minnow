@@ -2,7 +2,14 @@
 #include "FileOperations.h"
 #include "PathUtils.h"
 
+#include <KIO/Global>
+
 #include <QComboBox>
+#include <QDBusArgument>
+#include <QDBusConnection>
+#include <QDBusInterface>
+#include <QDBusObjectPath>
+#include <QDBusReply>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -12,18 +19,24 @@
 #include <QDropEvent>
 #include <QFont>
 #include <QFormLayout>
+#include <QFutureWatcher>
 #include <QIcon>
 #include <QInputDialog>
 #include <QIntValidator>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QMimeData>
+#include <QPainter>
+#include <QPainterPath>
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStorageInfo>
+#include <QStyledItemDelegate>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QtConcurrentRun>
 
 namespace
 {
@@ -31,12 +44,79 @@ constexpr int PinnedRole = Qt::UserRole + 1;
 constexpr int UrlRole = Qt::UserRole;
 constexpr int HeaderRole = Qt::UserRole + 2;
 constexpr int HeaderNameRole = Qt::UserRole + 3;
+constexpr int DiskUsagePercentRole = Qt::UserRole + 4; // set only for Bar style - paints the inline meter
+constexpr int UnmountedObjectPathRole = Qt::UserRole + 5; // set only on not-yet-mounted drive rows
 
 const QString kDefaultSection = QStringLiteral("Bookmarks");
 const QString kPlacesHeader = QStringLiteral("Places");
 const QString kDevicesHeader = QStringLiteral("Devices");
 const QString kNetworkHeader = QStringLiteral("Network");
 const QString kSectionMimeType = QStringLiteral("application/x-minnow-sidebar-section");
+const QString kHomeSettingsKey = QStringLiteral("Home");
+
+int usageBucket(qint64 bytesTotal, qint64 bytesAvailable)
+{
+    return bytesTotal > 0 ? static_cast<int>((bytesTotal - bytesAvailable) * 100 / bytesTotal) : -1;
+}
+
+// Paints a small inline usage meter to the right of the icon+text for rows carrying
+// DiskUsagePercentRole, instead of a separate sub-row (setItemWidget + a nested layout widget
+// turned out to silently never paint - some interaction with how QAbstractItemView reparents
+// index widgets. Delegate painting sidesteps that entirely).
+class UsageBarDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        const QVariant percentData = index.data(DiskUsagePercentRole);
+        if (!percentData.isValid()) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+
+        // paint at full width, same as every other row - narrowing option.rect here would also
+        // narrow the selection/hover background, making rows with a bar look shorter than the rest
+        QStyledItemDelegate::paint(painter, option, index);
+
+        static constexpr int barHeight = 6;
+        static constexpr int rightMargin = 10;
+        static constexpr int gap = 12;
+        static constexpr int minBarWidth = 24;
+        // icon (PlacesSidebar::setIconSize is 18px) + icon-text spacing + the row's left margin -
+        // rough, but close enough to sit the bar right after the text instead of stranded at the
+        // row's far edge with a big empty gap for short labels like "nas" or "Data"
+        static constexpr int iconAndPadding = 30;
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(Qt::NoPen);
+
+        const QString text = index.data(Qt::DisplayRole).toString();
+        const int textWidth = option.fontMetrics.horizontalAdvance(text);
+        const int naturalBarLeft = option.rect.left() + iconAndPadding + textWidth + gap;
+        const int barRight = option.rect.right() - rightMargin;
+        const int barLeft = qMin(naturalBarLeft, barRight - minBarWidth); // fills the rest of the row, not just a fixed width
+
+        const qreal radius = barHeight / 2.0;
+        const QRectF track(barLeft, option.rect.top() + (option.rect.height() - barHeight) / 2.0, barRight - barLeft, barHeight);
+        QPainterPath trackPath;
+        trackPath.addRoundedRect(track, radius, radius);
+        painter->fillPath(trackPath, option.palette.color(QPalette::Mid));
+
+        const double percentFree = percentData.toDouble();
+        const double usedFraction = 1.0 - (percentFree / 100.0);
+        const qreal fillWidth = qBound(0.0, track.width() * usedFraction, track.width());
+        if (fillWidth > 0) {
+            painter->setClipPath(trackPath);
+            QPainterPath fillPath;
+            fillPath.addRoundedRect(QRectF(track.left(), track.top(), fillWidth, track.height()), radius, radius);
+            painter->fillPath(fillPath, DiskUsageIndicator::colorForPercentFree(percentFree));
+        }
+        painter->restore();
+    }
+};
 
 bool isRealVolume(const QStorageInfo &info)
 {
@@ -66,17 +146,17 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     : QListWidget(parent)
 {
     setFrameShape(QFrame::NoFrame);
-    setFixedWidth(200);
     setIconSize(QSize(18, 18));
     setSpacing(2);
     setUniformItemSizes(false);
     setContextMenuPolicy(Qt::CustomContextMenu);
     setAcceptDrops(true);
     setDragDropMode(QAbstractItemView::DragDrop);
+    setItemDelegate(new UsageBarDelegate(this));
 
     m_fixedPlaces = {
         {tr("Home"), QStringLiteral("user-home"),
-         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)), QStringLiteral("Home")},
+         QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)), kHomeSettingsKey},
         {tr("Documents"), QStringLiteral("folder-documents"),
          QUrl::fromLocalFile(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)), QStringLiteral("Documents")},
         {tr("Downloads"), QStringLiteral("folder-download"),
@@ -90,8 +170,19 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
         {tr("Trash"), QStringLiteral("user-trash"), QUrl(QStringLiteral("trash:/")), QStringLiteral("Trash")},
     };
 
+    QSettings settings;
+    m_diskUsageEnabled = settings.value(QStringLiteral("Sidebar/ShowDriveDiskUsage"), false).toBool();
+    m_diskUsageStyle = settings.value(QStringLiteral("Sidebar/DiskUsageStyle"), static_cast<int>(DiskUsageIndicator::Style::Text)).toInt()
+            == static_cast<int>(DiskUsageIndicator::Style::Bar)
+        ? DiskUsageIndicator::Style::Bar
+        : DiskUsageIndicator::Style::Text;
+
     loadPinned(); // must run before loadSectionOrder(), which needs m_pinned for the legacy-section migration
     loadSectionOrder();
+    // Places/Bookmarks show up immediately, before drives are known - refreshDrives() below
+    // scans in the background (a stat() on an unresponsive network share can block for a long
+    // time) and triggers a second rebuildAll() once Devices/Network are known.
+    rebuildAll();
     refreshDrives();
 
     // catches shares mounted outside the app (fstab, manual `mount`) so the user doesn't
@@ -102,6 +193,11 @@ PlacesSidebar::PlacesSidebar(QWidget *parent)
     driveRefreshTimer->start();
 
     connect(this, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        const QString unmountedPath = item->data(UnmountedObjectPathRole).toString();
+        if (!unmountedPath.isEmpty()) {
+            mountAndNavigate(unmountedPath);
+            return;
+        }
         const QUrl url = item->data(UrlRole).toUrl();
         if (url.isValid())
             Q_EMIT placeActivated(url);
@@ -160,21 +256,35 @@ void PlacesSidebar::rebuildAll()
         if (section == kPlacesHeader) {
             addHeaderItem(kPlacesHeader, /*reorderable=*/true);
             for (const auto &place : m_fixedPlaces) {
-                if (isFixedPlaceVisible(place.settingsKey))
-                    addPlaceItem(place.label, place.iconName, place.url, false);
+                if (!isFixedPlaceVisible(place.settingsKey))
+                    continue;
+                QListWidgetItem *item = addPlaceItem(place.label, place.iconName, place.url, false);
+                // only Home can be on its own volume - the rest are subdirectories of it
+                if (place.settingsKey == kHomeSettingsKey && m_homeOnSeparateVolume)
+                    applyUsageDisplay(item, place.label, m_homeBytesTotal, m_homeBytesAvailable);
             }
         } else if (section == kDevicesHeader) {
-            if (m_drives.isEmpty())
+            if (m_drives.isEmpty() && m_unmountedDrives.isEmpty())
                 continue;
             addHeaderItem(kDevicesHeader, /*reorderable=*/true);
-            for (const auto &drive : m_drives)
-                addPlaceItem(drive.label, QStringLiteral("drive-harddisk"), drive.url, false);
+            for (const auto &drive : m_drives) {
+                QListWidgetItem *item = addPlaceItem(drive.label, QStringLiteral("drive-harddisk"), drive.url, false);
+                applyUsageDisplay(item, drive.label, drive.bytesTotal, drive.bytesAvailable);
+            }
+            // plugged in but not mounted anywhere yet (no auto-mount daemon watching) - clicking
+            // one calls Filesystem.Mount() via UDisks2 instead of navigating, see mountAndNavigate()
+            for (const auto &unmounted : m_unmountedDrives) {
+                QListWidgetItem *item = addPlaceItem(unmounted.label, QStringLiteral("drive-removable-media"), QUrl(), false);
+                item->setData(UnmountedObjectPathRole, unmounted.blockObjectPath);
+            }
         } else if (section == kNetworkHeader) {
             if (m_networkShares.isEmpty())
                 continue;
             addHeaderItem(kNetworkHeader, /*reorderable=*/true);
-            for (const auto &share : m_networkShares)
-                addPlaceItem(share.label, QStringLiteral("network-server"), share.url, false);
+            for (const auto &share : m_networkShares) {
+                QListWidgetItem *item = addPlaceItem(share.label, QStringLiteral("network-server"), share.url, false);
+                applyUsageDisplay(item, share.label, share.bytesTotal, share.bytesAvailable);
+            }
         } else {
             const bool isCustom = section != kDefaultSection;
             QVector<PinnedEntry> entries;
@@ -190,12 +300,36 @@ void PlacesSidebar::rebuildAll()
     }
 }
 
-void PlacesSidebar::refreshDrives()
+bool PlacesSidebar::DriveEntry::operator==(const DriveEntry &other) const
 {
-    QVector<DriveEntry> newDrives;
-    QVector<DriveEntry> newNetworkShares;
+    return label == other.label && url == other.url && usageBucket(bytesTotal, bytesAvailable) == usageBucket(other.bytesTotal, other.bytesAvailable);
+}
+
+void PlacesSidebar::applyUsageDisplay(QListWidgetItem *item, const QString &baseLabel, qint64 bytesTotal, qint64 bytesAvailable)
+{
+    if (!m_diskUsageEnabled || bytesTotal <= 0)
+        return;
+    if (m_diskUsageStyle == DiskUsageIndicator::Style::Text)
+        item->setText(tr("%1 — %2 free of %3").arg(baseLabel, KIO::convertSize(bytesAvailable), KIO::convertSize(bytesTotal)));
+    else
+        item->setData(DiskUsagePercentRole, bytesAvailable * 100.0 / bytesTotal);
+}
+
+// Runs off the UI thread (via QtConcurrent in refreshDrives()) - stat()ing an unresponsive
+// network share can block for a long time, and used to stall the whole app at every launch
+// and every 5s refresh.
+PlacesSidebar::ScanResult PlacesSidebar::scanVolumes()
+{
+    ScanResult result;
 
     const QString homePath = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation)).canonicalPath();
+    const QStorageInfo homeInfo(homePath);
+    result.homeOnSeparateVolume = homeInfo.rootPath() != QStringLiteral("/");
+    if (result.homeOnSeparateVolume) {
+        result.homeBytesTotal = homeInfo.bytesTotal();
+        result.homeBytesAvailable = homeInfo.bytesAvailable();
+    }
+
     static const QSet<QString> excludedMountPoints = {
         QStringLiteral("/boot"),
         QStringLiteral("/boot/efi"),
@@ -214,22 +348,129 @@ void PlacesSidebar::refreshDrives()
             label = QDir(rootPath).dirName();
         if (label.isEmpty())
             label = rootPath;
+        DriveEntry entry{label, QUrl::fromLocalFile(rootPath), info.bytesTotal(), info.bytesAvailable()};
         if (isNetworkFileSystem(info.fileSystemType()))
-            newNetworkShares << DriveEntry{label, QUrl::fromLocalFile(rootPath)};
+            result.networkShares << entry;
         else
-            newDrives << DriveEntry{label, QUrl::fromLocalFile(rootPath)};
+            result.drives << entry;
+    }
+    return result;
+}
+
+// UDisks2 knows about removable volumes the moment they're plugged in, whether or not anything
+// auto-mounted them - a fresh system with no auto-mount daemon running never gets a /proc/mounts
+// entry at all, which is all scanVolumes() above can see. Talking to udisks2 is local D-Bus IPC
+// to a system daemon, not real disk/network I/O, so unlike scanVolumes() this runs synchronously
+// on the UI thread - no risk of the kind of stall that justified backgrounding that one.
+QVector<PlacesSidebar::UnmountedDrive> PlacesSidebar::scanUnmountedDrives()
+{
+    QVector<UnmountedDrive> result;
+
+    auto getProperties = [](const QString &objectPath, const QString &interfaceName) -> QVariantMap {
+        QDBusInterface propsInterface(QStringLiteral("org.freedesktop.UDisks2"), objectPath,
+                                       QStringLiteral("org.freedesktop.DBus.Properties"), QDBusConnection::systemBus());
+        const QDBusReply<QVariantMap> reply = propsInterface.call(QStringLiteral("GetAll"), interfaceName);
+        return reply.isValid() ? reply.value() : QVariantMap();
+    };
+
+    QDBusInterface managerInterface(QStringLiteral("org.freedesktop.UDisks2"), QStringLiteral("/org/freedesktop/UDisks2/Manager"),
+                                     QStringLiteral("org.freedesktop.UDisks2.Manager"), QDBusConnection::systemBus());
+    const QDBusReply<QList<QDBusObjectPath>> blockDevicesReply = managerInterface.call(QStringLiteral("GetBlockDevices"), QVariantMap());
+    if (!blockDevicesReply.isValid())
+        return result; // no udisks2 on this system, or nothing usable on the bus - degrade quietly
+
+    QHash<QString, bool> driveRemovableCache; // drive object path -> Removable, so multi-partition drives ask once
+
+    for (const QDBusObjectPath &blockPath : blockDevicesReply.value()) {
+        const QVariantMap blockProps = getProperties(blockPath.path(), QStringLiteral("org.freedesktop.UDisks2.Block"));
+        if (blockProps.isEmpty() || blockProps.value(QStringLiteral("HintIgnore")).toBool())
+            continue;
+        if (blockProps.value(QStringLiteral("IdUsage")).toString() != QLatin1String("filesystem"))
+            continue; // skip whole disks, swap, LUKS containers, unformatted partitions - nothing to mount
+
+        const QString drivePath = blockProps.value(QStringLiteral("Drive")).value<QDBusObjectPath>().path();
+        if (drivePath.isEmpty() || drivePath == QLatin1String("/"))
+            continue;
+
+        if (!driveRemovableCache.contains(drivePath)) {
+            const QVariantMap driveProps = getProperties(drivePath, QStringLiteral("org.freedesktop.UDisks2.Drive"));
+            driveRemovableCache.insert(drivePath, driveProps.value(QStringLiteral("Removable")).toBool());
+        }
+        if (!driveRemovableCache.value(drivePath))
+            continue;
+
+        const QVariantMap fsProps = getProperties(blockPath.path(), QStringLiteral("org.freedesktop.UDisks2.Filesystem"));
+        if (fsProps.isEmpty())
+            continue; // no Filesystem interface at all - GetAll on a missing interface just comes back empty
+
+        // MountPoints is "aay" (array of byte-array paths) - only need to know if it's empty, so
+        // just peek at the outer array length without demarshaling the inner byte-arrays at all
+        QDBusArgument mountPointsArg = fsProps.value(QStringLiteral("MountPoints")).value<QDBusArgument>();
+        mountPointsArg.beginArray();
+        const bool alreadyMounted = !mountPointsArg.atEnd();
+        mountPointsArg.endArray();
+        if (alreadyMounted)
+            continue;
+
+        QString label = blockProps.value(QStringLiteral("IdLabel")).toString();
+        if (label.isEmpty())
+            label = blockProps.value(QStringLiteral("IdUUID")).toString();
+        if (label.isEmpty())
+            label = tr("Removable Disk");
+
+        result << UnmountedDrive{label, blockPath.path()};
     }
 
-    // nothing changed since last check (the usual case) -> skip rebuild so we don't flicker
-    // or lose scroll/selection every 5s. but always run once on startup, even with 0 drives,
-    // or Places/Bookmarks would never get built
-    if (m_drivesInitialized && newDrives == m_drives && newNetworkShares == m_networkShares)
+    return result;
+}
+
+void PlacesSidebar::mountAndNavigate(const QString &blockObjectPath)
+{
+    QDBusInterface fsInterface(QStringLiteral("org.freedesktop.UDisks2"), blockObjectPath,
+                                QStringLiteral("org.freedesktop.UDisks2.Filesystem"), QDBusConnection::systemBus());
+    const QDBusReply<QString> reply = fsInterface.call(QStringLiteral("Mount"), QVariantMap());
+    if (!reply.isValid()) {
+        QMessageBox::warning(this, tr("Could Not Mount Drive"), reply.error().message());
         return;
+    }
+    refreshDrives(); // drops the now-stale unmounted entry and picks up the real mount immediately
+    Q_EMIT placeActivated(QUrl::fromLocalFile(reply.value()));
+}
+
+void PlacesSidebar::refreshDrives()
+{
+    const QVector<UnmountedDrive> newUnmounted = scanUnmountedDrives();
+    if (newUnmounted != m_unmountedDrives) {
+        m_unmountedDrives = newUnmounted;
+        rebuildAll();
+    }
+
+    if (!m_scanWatcher) {
+        m_scanWatcher = new QFutureWatcher<ScanResult>(this);
+        connect(m_scanWatcher, &QFutureWatcher<ScanResult>::finished, this, [this] { applyScanResult(m_scanWatcher->result()); });
+    } else if (m_scanWatcher->isRunning()) {
+        return; // previous scan still in flight (e.g. a slow network share) - don't pile up scans
+    }
+    m_scanWatcher->setFuture(QtConcurrent::run(&PlacesSidebar::scanVolumes));
+}
+
+void PlacesSidebar::applyScanResult(const ScanResult &result)
+{
+    // nothing changed since last check (the usual case) -> skip rebuild so we don't flicker
+    // or lose scroll/selection every 5s
+    const bool unchanged = m_drivesInitialized && result.drives == m_drives && result.networkShares == m_networkShares
+        && result.homeOnSeparateVolume == m_homeOnSeparateVolume
+        && usageBucket(result.homeBytesTotal, result.homeBytesAvailable) == usageBucket(m_homeBytesTotal, m_homeBytesAvailable);
 
     m_drivesInitialized = true;
-    m_drives = newDrives;
-    m_networkShares = newNetworkShares;
-    rebuildAll();
+    m_drives = result.drives;
+    m_networkShares = result.networkShares;
+    m_homeBytesTotal = result.homeBytesTotal;
+    m_homeBytesAvailable = result.homeBytesAvailable;
+    m_homeOnSeparateVolume = result.homeOnSeparateVolume;
+
+    if (!unchanged)
+        rebuildAll();
 }
 
 bool PlacesSidebar::isPinned(const QUrl &url) const
@@ -447,7 +688,7 @@ bool PlacesSidebar::sectionIsVisible(const QString &section) const
     if (section == kPlacesHeader)
         return true;
     if (section == kDevicesHeader)
-        return !m_drives.isEmpty();
+        return !m_drives.isEmpty() || !m_unmountedDrives.isEmpty();
     if (section == kNetworkHeader)
         return !m_networkShares.isEmpty();
 
@@ -549,6 +790,23 @@ void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
     }
 
     menu.exec(viewport()->mapToGlobal(pos));
+}
+
+void PlacesSidebar::setDriveDiskUsageEnabled(bool enabled)
+{
+    if (m_diskUsageEnabled == enabled)
+        return;
+    m_diskUsageEnabled = enabled;
+    rebuildAll();
+}
+
+void PlacesSidebar::setDriveDiskUsageStyle(DiskUsageIndicator::Style style)
+{
+    if (m_diskUsageStyle == style)
+        return;
+    m_diskUsageStyle = style;
+    if (m_diskUsageEnabled)
+        rebuildAll();
 }
 
 void PlacesSidebar::setCurrentUrl(const QUrl &url)

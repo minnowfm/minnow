@@ -865,8 +865,10 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
     QAction *copyAction = nullptr;
     QAction *renameAction = nullptr;
     QAction *trashAction = nullptr;
+    QAction *deleteAction = nullptr;
     QAction *newFolderAction = nullptr;
     QAction *terminalAction = nullptr;
+    QAction *emptyTrashAction = nullptr;
 
     if (!selected.isEmpty()) {
         openAction = menu.addAction(QIcon::fromTheme(QStringLiteral("document-open")), tr("Open"));
@@ -948,15 +950,24 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
 
         menu.addSeparator();
 
-        trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
-        connect(trashAction, &QAction::triggered, this, [this, selected] {
-            FileOperations::trash(selected, this);
-        });
+        // already in Trash - "Move to Trash" a second time is meaningless, so this is the one
+        // and only removal action here instead of the usual trash/delete pair
+        if (m_currentUrl.scheme() == QLatin1String("trash")) {
+            deleteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-delete")), tr("Delete Permanently"));
+            connect(deleteAction, &QAction::triggered, this, [this, selected] {
+                FileOperations::remove(selected, this);
+            });
+        } else {
+            trashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Move to Trash"));
+            connect(trashAction, &QAction::triggered, this, [this, selected] {
+                FileOperations::trash(selected, this);
+            });
 
-        QAction *deleteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-delete")), tr("Delete permanently"));
-        connect(deleteAction, &QAction::triggered, this, [this, selected] {
-            FileOperations::remove(selected, this);
-        });
+            deleteAction = menu.addAction(QIcon::fromTheme(QStringLiteral("edit-delete")), tr("Delete permanently"));
+            connect(deleteAction, &QAction::triggered, this, [this, selected] {
+                FileOperations::remove(selected, this);
+            });
+        }
 
         menu.addSeparator();
     }
@@ -1060,9 +1071,13 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
     menu.addSeparator();
 
     if (m_currentUrl.scheme() == QLatin1String("trash")) {
-        QAction *emptyTrashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Empty Trash"));
-        connect(emptyTrashAction, &QAction::triggered, this, [this] { FileOperations::emptyTrash(this); });
-        menu.addSeparator();
+        // only on empty-space right-click - on a selected item, "Delete Permanently" above is
+        // already the one removal action, "Empty Trash" alongside it would just be a second one
+        if (selected.isEmpty()) {
+            emptyTrashAction = menu.addAction(QIcon::fromTheme(QStringLiteral("user-trash")), tr("Empty Trash"));
+            connect(emptyTrashAction, &QAction::triggered, this, [this] { FileOperations::emptyTrash(this); });
+            menu.addSeparator();
+        }
     } else {
         newFolderAction = menu.addAction(QIcon::fromTheme(QStringLiteral("folder-new")), tr("New Folder"));
         connect(newFolderAction, &QAction::triggered, this, [this] {
@@ -1129,11 +1144,15 @@ void BrowserTab::showViewContextMenu(const QPoint &pos)
         quickMenu.addSeparator();
     if (trashAction)
         quickMenu.addAction(trashAction);
+    else if (deleteAction) // trash scheme: deleteAction takes trashAction's place, see above
+        quickMenu.addAction(deleteAction);
     if (newFolderAction)
         quickMenu.addAction(newFolderAction);
     if (terminalAction)
         quickMenu.addAction(terminalAction);
-    if (trashAction || newFolderAction || terminalAction)
+    if (emptyTrashAction)
+        quickMenu.addAction(emptyTrashAction);
+    if (trashAction || deleteAction || newFolderAction || terminalAction || emptyTrashAction)
         quickMenu.addSeparator();
     quickMenu.addAction(propertiesAction);
     quickMenu.addSeparator();

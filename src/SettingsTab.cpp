@@ -93,6 +93,42 @@ SettingsTab::SettingsTab(QWidget *parent)
         settings.setValue(QStringLiteral("Confirmations/ConfirmPermanentDelete"), checked);
     });
 
+    m_diskUsageCheck = new QCheckBox(this);
+    m_diskUsageCheck->setChecked(settings.value(QStringLiteral("Sidebar/ShowDriveDiskUsage"), false).toBool());
+    form->addRow(tr("Show disk space for drives:"), m_diskUsageCheck);
+    connect(m_diskUsageCheck, &QCheckBox::toggled, this, [](bool checked) {
+        QSettings settings;
+        settings.setValue(QStringLiteral("Sidebar/ShowDriveDiskUsage"), checked);
+    });
+    connect(m_diskUsageCheck, &QCheckBox::toggled, this, &SettingsTab::diskUsageEnabledChanged);
+
+    m_diskUsageStyleCombo = new QComboBox(this);
+    m_diskUsageStyleCombo->addItem(tr("Text"), static_cast<int>(DiskUsageIndicator::Style::Text));
+    m_diskUsageStyleCombo->addItem(tr("Bar"), static_cast<int>(DiskUsageIndicator::Style::Bar));
+    const int savedStyle = settings.value(QStringLiteral("Sidebar/DiskUsageStyle"), static_cast<int>(DiskUsageIndicator::Style::Text)).toInt();
+    m_diskUsageStyleCombo->setCurrentIndex(savedStyle == static_cast<int>(DiskUsageIndicator::Style::Bar) ? 1 : 0);
+    form->addRow(tr("Disk space display:"), m_diskUsageStyleCombo);
+    connect(m_diskUsageStyleCombo, &QComboBox::currentIndexChanged, this, [this] {
+        const auto style = static_cast<DiskUsageIndicator::Style>(m_diskUsageStyleCombo->currentData().toInt());
+        QSettings settings;
+        settings.setValue(QStringLiteral("Sidebar/DiskUsageStyle"), static_cast<int>(style));
+        Q_EMIT diskUsageStyleChanged(style);
+    });
+
+    m_diskSummaryPositionCombo = new QComboBox(this);
+    m_diskSummaryPositionCombo->addItem(tr("Above places"), static_cast<int>(DiskSummaryPosition::Top));
+    m_diskSummaryPositionCombo->addItem(tr("Above settings"), static_cast<int>(DiskSummaryPosition::Bottom));
+    m_diskSummaryPositionCombo->addItem(tr("Hidden"), static_cast<int>(DiskSummaryPosition::Hidden));
+    const int savedPosition = settings.value(QStringLiteral("Sidebar/DiskSummaryPosition"), static_cast<int>(DiskSummaryPosition::Hidden)).toInt();
+    m_diskSummaryPositionCombo->setCurrentIndex(qBound(0, savedPosition, m_diskSummaryPositionCombo->count() - 1));
+    form->addRow(tr("Disk usage summary (/, /home):"), m_diskSummaryPositionCombo);
+    connect(m_diskSummaryPositionCombo, &QComboBox::currentIndexChanged, this, [this] {
+        const auto position = static_cast<DiskSummaryPosition>(m_diskSummaryPositionCombo->currentData().toInt());
+        QSettings settings;
+        settings.setValue(QStringLiteral("Sidebar/DiskSummaryPosition"), static_cast<int>(position));
+        Q_EMIT diskSummaryPositionChanged(position);
+    });
+
     // Muted secondary text color, same idea as MainWindow's footer text - palette(mid) sits
     // too close to the card background in some themes to read as intentionally dimmed.
     const QColor windowColor = palette().color(QPalette::Window);
