@@ -436,12 +436,21 @@ void pasteClipboard(const QUrl &destDir, QWidget *parent)
     const QMimeData *clip = QApplication::clipboard()->mimeData();
     if (!clip || !clip->hasUrls())
         return;
-    const bool isCut = clip->data(QStringLiteral("application/x-kde-cutselection")) == QByteArrayLiteral("1");
-    const QList<QUrl> urls = clip->urls();
-    if (isCut)
-        moveTo(urls, destDir, parent);
+    const QList<QUrl> cutUrls = cutClipboardUrls();
+    if (!cutUrls.isEmpty())
+        moveTo(cutUrls, destDir, parent);
     else
-        copyTo(urls, destDir, parent);
+        copyTo(clip->urls(), destDir, parent);
+}
+
+QList<QUrl> cutClipboardUrls()
+{
+    const QMimeData *clip = QApplication::clipboard()->mimeData();
+    if (!clip || !clip->hasUrls())
+        return {};
+    if (clip->data(QStringLiteral("application/x-kde-cutselection")) != QByteArrayLiteral("1"))
+        return {};
+    return clip->urls();
 }
 
 bool isArchive(const QUrl &url)

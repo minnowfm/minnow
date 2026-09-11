@@ -34,6 +34,10 @@ void batchRename(const QList<QUrl> &urls, const QString &newNamePattern, QChar p
 void cutToClipboard(const QList<QUrl> &urls);
 void copyToClipboard(const QList<QUrl> &urls);
 void pasteClipboard(const QUrl &destDir, QWidget *parent);
+// URLs currently staged on the clipboard as a *cut* (as opposed to a copy) - empty when the
+// clipboard holds no URLs, or holds a copy rather than a cut. Views use this to dim items that
+// are about to be moved on the next paste, the same way pasteClipboard() decides to move them.
+QList<QUrl> cutClipboardUrls();
 
 bool isArchive(const QUrl &url);
 void compressToArchive(const QList<QUrl> &sources, QWidget *parent);

@@ -79,6 +79,9 @@ private slots:
     void showViewContextMenu(const QPoint &pos);
     void onSortIndicatorChanged(int column, Qt::SortOrder order);
     void onUrlsDropped(const QUrl &destination, QDropEvent *event);
+    // Dims whichever items are currently staged on the "cut" clipboard (Dolphin-style), so it
+    // stays in sync whether the cut/copy/paste happened from this tab, another tab, or another window.
+    void onClipboardChanged();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

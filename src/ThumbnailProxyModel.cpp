@@ -20,6 +20,16 @@ QVariant ThumbnailProxyModel::data(const QModelIndex &index, int role) const
             }
         }
     }
+    if (role == CutRole) {
+        if (m_cutUrls.isEmpty())
+            return false;
+        if (auto *dirModel = qobject_cast<KDirModel *>(sourceModel())) {
+            const KFileItem item = dirModel->itemForIndex(mapToSource(index));
+            if (!item.isNull())
+                return m_cutUrls.contains(item.url().toString());
+        }
+        return false;
+    }
     return KDirSortFilterProxyModel::data(index, role);
 }
 
@@ -53,4 +63,17 @@ void ThumbnailProxyModel::clearThumbnails()
         return;
     m_thumbnails.clear();
     Q_EMIT layoutChanged();
+}
+
+void ThumbnailProxyModel::setCutUrls(const QSet<QString> &urls)
+{
+    if (m_cutUrls == urls)
+        return;
+    m_cutUrls = urls;
+    // dataChanged rather than layoutChanged - only the CutRole appearance changed, rows and
+    // their order didn't, so there's no need to disturb the current selection/scroll position.
+    const int rows = rowCount();
+    const int cols = columnCount();
+    if (rows > 0 && cols > 0)
+        Q_EMIT dataChanged(index(0, 0), index(rows - 1, cols - 1), {CutRole});
 }

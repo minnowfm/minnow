@@ -23,10 +23,13 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPropertyAnimation>
 #include <QScrollBar>
+#include <QSet>
 #include <QSettings>
 #include <QStackedWidget>
+#include <QStyledItemDelegate>
 #include <QTimer>
 #include <QTreeView>
 #include <QTreeWidget>
@@ -91,6 +94,26 @@ private:
     QAbstractItemView *m_view;
     QPropertyAnimation *m_animation;
 };
+
+// Paints items staged on the "cut" clipboard at reduced opacity, the same visual Dolphin (and
+// most other file managers) uses to show a file/folder is about to be moved rather than copied.
+class CutAwareDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        if (!index.data(ThumbnailProxyModel::CutRole).toBool()) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        painter->setOpacity(painter->opacity() * 0.5);
+        QStyledItemDelegate::paint(painter, option, index);
+        painter->restore();
+    }
+};
 }
 
 BrowserTab::BrowserTab(PlacesSidebar *sidebar, QWidget *parent)
@@ -151,6 +174,7 @@ void BrowserTab::setupViews()
     m_gridView->setDropIndicatorShown(true);
     m_gridView->setDragDropMode(QAbstractItemView::DragDrop);
     m_gridView->setDefaultDropAction(Qt::MoveAction);
+    m_gridView->setItemDelegate(new CutAwareDelegate(m_gridView));
     new SmoothScroller(m_gridView);
 
     m_listView = new QTreeView(this);
@@ -171,6 +195,7 @@ void BrowserTab::setupViews()
     m_listView->setDropIndicatorShown(true);
     m_listView->setDragDropMode(QAbstractItemView::DragDrop);
     m_listView->setDefaultDropAction(Qt::MoveAction);
+    m_listView->setItemDelegate(new CutAwareDelegate(m_listView));
     new SmoothScroller(m_listView);
 
     m_searchResultsView = new QTreeWidget(this);
@@ -225,6 +250,19 @@ void BrowserTab::setupViews()
         }
     });
     connect(m_listView->header(), &QHeaderView::sortIndicatorChanged, this, &BrowserTab::onSortIndicatorChanged);
+
+    // Clipboard is process-wide (and, with the system clipboard, effectively app-wide), so any
+    // tab's cut/copy is reflected here too - keeps the dimming in sync across tabs and windows.
+    connect(QApplication::clipboard(), &QClipboard::dataChanged, this, &BrowserTab::onClipboardChanged);
+    onClipboardChanged(); // pick up a cut that happened before this tab/window existed
+}
+
+void BrowserTab::onClipboardChanged()
+{
+    QSet<QString> cutUrls;
+    for (const QUrl &url : FileOperations::cutClipboardUrls())
+        cutUrls.insert(url.toString());
+    m_proxyModel->setCutUrls(cutUrls);
 }
 
 void BrowserTab::navigateTo(const QUrl &url)
