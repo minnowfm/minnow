@@ -13,6 +13,7 @@
 #include "TaskProgressPopup.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QColor>
 #include <QDBusConnection>
@@ -624,6 +625,18 @@ void MainWindow::setupShortcuts()
     auto *undoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Z), this);
     undoShortcut->setContext(Qt::WindowShortcut);
     connect(undoShortcut, &QShortcut::activated, this, [this] {
+        // Cut (Ctrl+X) never pushes anything onto the undo stack by itself - cutToClipboard()
+        // just marks the clipboard, no KIO job runs until something's actually pasted. So if
+        // there's a cut still pending, treat Ctrl+Z as "cancel that cut" instead of reaching
+        // past it into whatever real file operation came before.
+        if (!FileOperations::cutClipboardUrls().isEmpty()) {
+            QApplication::clipboard()->clear();
+            return;
+        }
+        // isUndoAvailable() guard is load-bearing, not an optimization - calling undo() with
+        // nothing on the stack crashes (SEGV) inside KIO itself instead of just no-op'ing.
+        if (!KIO::FileUndoManager::self()->isUndoAvailable())
+            return;
         KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
         KIO::FileUndoManager::self()->undo();
     });
@@ -632,6 +645,8 @@ void MainWindow::setupShortcuts()
     auto *redoShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z), this);
     redoShortcut->setContext(Qt::WindowShortcut);
     connect(redoShortcut, &QShortcut::activated, this, [this] {
+        if (!KIO::FileUndoManager::self()->isRedoAvailable())
+            return; // same crash risk as undo() above with nothing to redo
         KIO::FileUndoManager::self()->uiInterface()->setParentWidget(this);
         KIO::FileUndoManager::self()->redo();
     });
