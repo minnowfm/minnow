@@ -13,6 +13,7 @@
 #include <KIO/DeleteJob>
 #include <KIO/EmptyTrashJob>
 #include <KIO/FileUndoManager>
+#include <KIO/Global>
 #include <KIO/JobUiDelegateFactory>
 #include <KIO/MkdirJob>
 #include <KIO/OpenUrlJob>
@@ -65,6 +66,20 @@ bool confirmPermanentDelete(QWidget *parent, const QString &text)
     box.setDefaultButton(QMessageBox::Cancel);
     box.exec();
     return box.clickedButton() == deleteButton;
+}
+
+// Actually starts a permanent-delete job, with no confirmation prompt of its own - used both by
+// remove() (which confirms first) and by trash()'s automatic fallback below (which intentionally
+// doesn't: the user already asked to get rid of these, trash was just the "keep a safety net"
+// version of that, not a separate action to reconfirm).
+void deleteUrls(const QList<QUrl> &urls, QWidget *parent)
+{
+    if (urls.isEmpty())
+        return;
+    KIO::Job *job = KIO::del(urls, KIO::DefaultFlags);
+    KJobWidgets::setWindow(job, parent);
+    job->uiDelegate()->setAutoErrorHandlingEnabled(true);
+    // no FileUndoManager::recordJob() - permanent means permanent, there's no undo to record
 }
 
 // longest suffix first, or "foo.tar.gz" would match plain ".gz"/".tar" instead of the whole thing
@@ -277,9 +292,28 @@ void trash(const QList<QUrl> &urls, QWidget *parent)
         return;
     KIO::Job *job = KIO::trash(urls, KIO::DefaultFlags);
     KJobWidgets::setWindow(job, parent);
-    job->uiDelegate()->setAutoErrorHandlingEnabled(true);
+    // Not auto-handled: a trash failure - no trash available at this location (some removable
+    // drives/network mounts don't support one) or a file too big for it to hold - falls through
+    // to a real delete below instead of leaving the user stuck looking at an error dialog with
+    // no useful next step.
+    job->uiDelegate()->setAutoErrorHandlingEnabled(false);
     KIO::FileUndoManager::self()->recordJob(KIO::FileUndoManager::Trash, urls, QUrl(QStringLiteral("trash:/")), job);
     // no TaskManager::trackJob() here - deletions don't belong in the activity list
+
+    const QPointer<QWidget> safeParent(parent);
+    QObject::connect(job, &KJob::result, job, [urls, safeParent](KJob *finishedJob) {
+        if (finishedJob->error() == 0 || finishedJob->error() == KIO::ERR_USER_CANCELED)
+            return;
+        // Trash can fail partway through a multi-item selection (e.g. some files fit, one was
+        // too large) - only re-target whatever's still actually sitting where it started, so a
+        // file that did make it to the trash doesn't also get "not found" thrown at it here.
+        QList<QUrl> remaining;
+        for (const QUrl &url : urls) {
+            if (!url.isLocalFile() || QFileInfo::exists(url.toLocalFile()))
+                remaining << url;
+        }
+        deleteUrls(remaining, safeParent);
+    });
 }
 
 void remove(const QList<QUrl> &urls, QWidget *parent)
@@ -293,10 +327,7 @@ void remove(const QList<QUrl> &urls, QWidget *parent)
     if (!confirmPermanentDelete(parent, text))
         return;
 
-    KIO::Job *job = KIO::del(urls, KIO::DefaultFlags);
-    KJobWidgets::setWindow(job, parent);
-    job->uiDelegate()->setAutoErrorHandlingEnabled(true);
-    // no FileUndoManager::recordJob() - permanent means permanent, there's no undo to record
+    deleteUrls(urls, parent);
 }
 
 void rename(const QUrl &url, const QString &newName, QWidget *parent)

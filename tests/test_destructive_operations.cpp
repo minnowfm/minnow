@@ -26,6 +26,7 @@ private Q_SLOTS:
     void initTestCase();
 
     void trash_movesFileIntoIsolatedTrashDirectory();
+    void trash_fallsBackToPermanentDelete_whenTrashIsUnavailable();
     void remove_permanentlyDeletesFileWithoutPrompting();
     void emptyTrash_removesAllTrashedFiles();
 };
@@ -53,6 +54,34 @@ void DestructiveOperationsTest::trash_movesFileIntoIsolatedTrashDirectory()
 
     const QString trashFiles = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/Trash/files");
     QVERIFY(QTest::qWaitFor([&] { return QFileInfo::exists(trashFiles + QStringLiteral("/trashme.txt")); }, 5000));
+}
+
+void DestructiveOperationsTest::trash_fallsBackToPermanentDelete_whenTrashIsUnavailable()
+{
+    // Force the trash job to fail: replace ~/.local/share/Trash itself with a plain file, so
+    // kio_trash can't create Trash/files under it - simulates "no trash support at this
+    // location" without relying on permission bits, which running as root (as CI usually does)
+    // would just bypass anyway.
+    const QString trashDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/Trash");
+    QDir(trashDir).removeRecursively();
+    QFile blocker(trashDir);
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    blocker.close();
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("cantbetrashed.txt"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.close();
+
+    FileOperations::trash({QUrl::fromLocalFile(path)}, nullptr);
+
+    // trash() can't succeed with Trash/ blocked like this - it should fall back to permanently
+    // deleting the file outright rather than leaving it in place behind a dead-end error dialog
+    QVERIFY(QTest::qWaitFor([&] { return !QFileInfo::exists(path); }, 5000));
+
+    QFile::remove(trashDir); // undo the blocker so later tests get a real Trash/ directory again
 }
 
 void DestructiveOperationsTest::remove_permanentlyDeletesFileWithoutPrompting()
