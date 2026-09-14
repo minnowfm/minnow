@@ -27,6 +27,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QSet>
@@ -733,6 +734,16 @@ void PlacesSidebar::showSidebarContextMenu(const QPoint &pos)
     QMenu menu(this);
     QListWidgetItem *it = itemAt(pos);
 
+    // unmounted drives need mountAndNavigate(), not a plain "open in new tab" - same guard as
+    // the middle-click handler in mouseReleaseEvent()
+    const bool isUnmounted = it && !it->data(UnmountedObjectPathRole).toString().isEmpty();
+    const QUrl itemUrl = it && !isUnmounted ? it->data(UrlRole).toUrl() : QUrl();
+    if (itemUrl.isValid()) {
+        QAction *openNewTabAction = menu.addAction(QIcon::fromTheme(QStringLiteral("tab-new")), tr("Open in New Tab"));
+        connect(openNewTabAction, &QAction::triggered, this, [this, itemUrl] { Q_EMIT placeOpenInNewTabRequested(itemUrl); });
+        menu.addSeparator();
+    }
+
     if (it && it->data(PinnedRole).toBool()) {
         const QUrl url = it->data(UrlRole).toUrl();
         QAction *removeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), tr("Remove from Sidebar"));
@@ -953,4 +964,18 @@ void PlacesSidebar::dropEvent(QDropEvent *event)
     else
         FileOperations::copyTo(urls, destDir, this);
     event->acceptProposedAction();
+}
+
+void PlacesSidebar::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::MiddleButton) {
+        QListWidgetItem *it = itemAt(event->pos());
+        // skip unmounted drives - those need mountAndNavigate(), not a plain "open in new tab"
+        const QUrl url = it && it->data(UnmountedObjectPathRole).toString().isEmpty() ? it->data(UrlRole).toUrl() : QUrl();
+        if (url.isValid()) {
+            Q_EMIT placeOpenInNewTabRequested(url);
+            return;
+        }
+    }
+    QListWidget::mouseReleaseEvent(event);
 }

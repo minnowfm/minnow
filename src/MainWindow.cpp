@@ -285,6 +285,7 @@ void MainWindow::setupSidebar()
         if (auto *tab = currentTab())
             tab->navigateTo(url);
     });
+    connect(m_sidebar, &PlacesSidebar::placeOpenInNewTabRequested, this, [this](const QUrl &url) { addNewTab(url, false); });
 }
 
 // Builds the "/" disk-usage summary and places it above the sidebar, above the settings/activity

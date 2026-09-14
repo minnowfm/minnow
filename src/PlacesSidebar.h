@@ -25,12 +25,14 @@ public:
 
 signals:
     void placeActivated(const QUrl &url);
+    void placeOpenInNewTabRequested(const QUrl &url);
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     QMimeData *mimeData(const QList<QListWidgetItem *> &items) const override;
 
 private:
