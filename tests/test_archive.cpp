@@ -1,6 +1,8 @@
 #include "FileOperations.h"
 #include "TaskManager.h"
 
+#include <K7Zip>
+
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -23,6 +25,7 @@ private Q_SLOTS:
     void compressAndExtract_roundTripsFileContent();
     void compressAndExtract_preservesNestedDirectoryStructure();
     void compressAndExtract_preservesRelativeSymlinkTarget();
+    void extractArchive_handlesSevenZipFiles();
 };
 
 // startTask() runs synchronously before compressToArchive()/extractArchive() return, so by
@@ -138,6 +141,38 @@ void ArchiveTest::compressAndExtract_preservesRelativeSymlinkTarget()
     const ssize_t length = ::readlink(QFile::encodeName(extractedLink).constData(), buffer, sizeof(buffer) - 1);
     QVERIFY(length > 0);
     QCOMPARE(QByteArray(buffer, length), QByteArrayLiteral("target.txt"));
+}
+
+void ArchiveTest::extractArchive_handlesSevenZipFiles()
+{
+    // minnow only ever creates .zip via compressToArchive() - there's no "compress to 7z", so
+    // this builds the .7z by hand with K7Zip itself to exercise extractArchive()'s other branch.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString sourceFile = dir.filePath(QStringLiteral("payload.txt"));
+    QFile source(sourceFile);
+    QVERIFY(source.open(QIODevice::WriteOnly));
+    source.write("7z content");
+    source.close();
+
+    const QString archivePath = dir.filePath(QStringLiteral("Archive.7z"));
+    {
+        K7Zip archive(archivePath);
+        QVERIFY(archive.open(QIODevice::WriteOnly));
+        QVERIFY(archive.addLocalFile(sourceFile, QStringLiteral("payload.txt")));
+        QVERIFY(archive.close());
+    }
+
+    FileOperations::extractArchive(QUrl::fromLocalFile(archivePath), nullptr);
+    const int extractTaskId = TaskManager::self()->tasks().first().id;
+    QVERIFY(waitForTaskToFinish(extractTaskId));
+
+    const QString extractedFile = dir.filePath(QStringLiteral("Archive/payload.txt"));
+    QVERIFY(QFileInfo::exists(extractedFile));
+    QFile extracted(extractedFile);
+    QVERIFY(extracted.open(QIODevice::ReadOnly));
+    QCOMPARE(extracted.readAll(), QByteArrayLiteral("7z content"));
 }
 
 int main(int argc, char *argv[])

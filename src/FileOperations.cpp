@@ -3,6 +3,7 @@
 #include "PropertiesDialog.h"
 #include "TaskManager.h"
 
+#include <K7Zip>
 #include <KArchive>
 #include <KArchiveDirectory>
 #include <KArchiveEntry>
@@ -88,7 +89,7 @@ const QStringList &archiveSuffixes()
     static const QStringList suffixes = {
         QStringLiteral(".tar.gz"), QStringLiteral(".tar.bz2"), QStringLiteral(".tar.xz"),
         QStringLiteral(".tgz"),    QStringLiteral(".tbz2"),    QStringLiteral(".txz"),
-        QStringLiteral(".tar"),    QStringLiteral(".zip"),
+        QStringLiteral(".tar"),    QStringLiteral(".zip"),     QStringLiteral(".7z"),
     };
     return suffixes;
 }
@@ -590,7 +591,10 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
         return;
     }
 
-    const bool isZip = lowerName.endsWith(QStringLiteral(".zip"));
+    enum class ArchiveKind { Zip, SevenZip, Tar };
+    const ArchiveKind kind = lowerName.endsWith(QStringLiteral(".zip"))  ? ArchiveKind::Zip
+                            : lowerName.endsWith(QStringLiteral(".7z")) ? ArchiveKind::SevenZip
+                                                                        : ArchiveKind::Tar;
 
     // same deal as compressToArchive() above - worker thread + TaskManager-anchored watcher
     const int taskId = TaskManager::self()->startTask(QObject::tr("Extracting \"%1\"").arg(fileName));
@@ -610,12 +614,19 @@ void extractArchive(const QUrl &archiveUrl, QWidget *parent)
         watcher->deleteLater();
     });
 
-    QFuture<QString> future = QtConcurrent::run([path, fileName, destPath, isZip, taskId]() -> QString {
+    QFuture<QString> future = QtConcurrent::run([path, fileName, destPath, kind, taskId]() -> QString {
         std::unique_ptr<KArchive> archive;
-        if (isZip)
+        switch (kind) {
+        case ArchiveKind::Zip:
             archive = std::make_unique<KZip>(path);
-        else
+            break;
+        case ArchiveKind::SevenZip:
+            archive = std::make_unique<K7Zip>(path);
+            break;
+        case ArchiveKind::Tar:
             archive = std::make_unique<KTar>(path);
+            break;
+        }
 
         if (!archive->open(QIODevice::ReadOnly))
             return QObject::tr("Could not open \"%1\": %2").arg(fileName, archive->errorString());

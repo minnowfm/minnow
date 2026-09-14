@@ -17,7 +17,7 @@ A simple, lightweight file manager for KDE, built against Qt6 and KDE Frameworks
 - Adjustable icon size (Small/Medium/Large/Huge)
 - Copy, cut/paste, rename, new folder, move to trash, permanent delete (all via KIO)
 - Undo/redo for everything except permanent delete
-- Compress files/folders to a `.zip`, or extract `.zip`/`.tar`/`.tar.gz`/`.tar.bz2`/`.tar.xz` archives, without blocking the UI on large archives
+- Compress files/folders to a `.zip`, or extract `.zip`/`.7z`/`.tar`/`.tar.gz`/`.tar.bz2`/`.tar.xz` archives, without blocking the UI on large archives
 - Right-click menu shows the common actions by default, with a "Show More Options" entry for the rest
 - Open a specific directory from the command line: `minnow /some/path`
 
