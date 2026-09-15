@@ -18,6 +18,11 @@ class TabBar;
 class SettingsTab;
 class ActivityTab;
 
+namespace KIO
+{
+class DirectorySizeJob;
+}
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -87,6 +92,10 @@ private:
 
     QLabel *m_itemCountLabel = nullptr;
     QLabel *m_freeSpaceLabel = nullptr;
+    // Recursive size of the current selection (only spun up when it contains a directory - a
+    // plain file's size is already known without asking KIO). Killed and replaced every time
+    // the selection changes so a slow scan never overwrites a newer one's result.
+    KIO::DirectorySizeJob *m_selectionSizeJob = nullptr;
 
     SettingsTab *m_settingsTab = nullptr;
     ActivityTab *m_activityTab = nullptr;

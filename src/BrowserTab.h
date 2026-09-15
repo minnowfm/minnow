@@ -14,6 +14,7 @@ class QTimer;
 class KDirLister;
 class KDirModel;
 class KFileItem;
+class KFileItemList;
 class ThumbnailProxyModel;
 class PathBar;
 class PlacesSidebar;
@@ -36,6 +37,10 @@ public:
     void navigateTo(const QUrl &url);
     QUrl currentUrl() const { return m_currentUrl; }
     QList<QUrl> selectedUrls() const;
+    // Same selection as selectedUrls(), but with the KFileItem (size, isDir, ...) already in
+    // hand instead of just the URL - empty while search results are showing, since those only
+    // carry a URL, not a cached KFileItem.
+    KFileItemList selectedItems() const;
     QAbstractItemView *currentView() const;
     PathBar *pathBar() const { return m_pathBar; }
 

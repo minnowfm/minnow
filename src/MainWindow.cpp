@@ -37,7 +37,9 @@
 #include <QVBoxLayout>
 
 #include <KFileItem>
+#include <KIO/DirectorySizeJob>
 #include <KIO/FileUndoManager>
+#include <KIO/Global>
 #include <KIO/StatJob>
 #include <KStartupInfo>
 
@@ -540,6 +542,12 @@ void MainWindow::onTabTitleChanged()
 
 void MainWindow::updateChromeForCurrentTab()
 {
+    // whatever it was sizing up is stale the moment the tab or selection changes again
+    if (m_selectionSizeJob) {
+        m_selectionSizeJob->kill();
+        m_selectionSizeJob = nullptr;
+    }
+
     BrowserTab *tab = currentTab();
     if (!tab) {
         m_backButton->setEnabled(false);
@@ -562,8 +570,38 @@ void MainWindow::updateChromeForCurrentTab()
     const QList<QUrl> selected = tab->selectedUrls();
     if (selected.size() == 1)
         m_itemCountLabel->setText(selected.first().fileName());
+    else if (!selected.isEmpty())
+        m_itemCountLabel->setText(tr("%n item(s) selected", "", selected.size()));
     else
         m_itemCountLabel->setText(tr("%n item(s)", "", tab->itemCount()));
+
+    // Selection replaces the free-space readout with its own total size - same swap Dolphin
+    // does. selectedItems() comes back empty for a search-results selection (no cached KFileItem
+    // there), in which case there's nothing to size up without a stat round-trip per row, so it
+    // just falls through to blanking the label rather than showing something misleading.
+    const KFileItemList selectedItems = tab->selectedItems();
+    if (!selectedItems.isEmpty()) {
+        if (selectedItems.size() == 1 && !selectedItems.first().isDir()) {
+            m_freeSpaceLabel->setText(tr("%1 selected").arg(KIO::convertSize(selectedItems.first().size())));
+        } else {
+            m_freeSpaceLabel->setText(tr("Calculating…"));
+            m_selectionSizeJob = KIO::directorySize(selectedItems);
+            connect(m_selectionSizeJob, &KJob::result, this, [this](KJob *job) {
+                if (m_selectionSizeJob != job)
+                    return;
+                m_selectionSizeJob = nullptr;
+                auto *sizeJob = qobject_cast<KIO::DirectorySizeJob *>(job);
+                if (sizeJob && !sizeJob->error())
+                    m_freeSpaceLabel->setText(tr("%1 selected").arg(KIO::convertSize(sizeJob->totalSize())));
+            });
+        }
+        return;
+    }
+    if (!selected.isEmpty()) {
+        m_freeSpaceLabel->clear();
+        return;
+    }
+
     const QString localPath = tab->currentUrl().isLocalFile() ? tab->currentUrl().toLocalFile() : QDir::homePath();
     QStorageInfo info(localPath);
     if (info.isValid()) {

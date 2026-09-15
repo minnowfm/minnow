@@ -351,18 +351,30 @@ QList<QUrl> BrowserTab::selectedUrls() const
         return urls;
     }
 
+    for (const KFileItem &item : selectedItems())
+        urls << item.url();
+    return urls;
+}
+
+KFileItemList BrowserTab::selectedItems() const
+{
+    KFileItemList items;
+
+    if (searchActive())
+        return items;
+
     QAbstractItemView *view = currentView();
     if (!view->selectionModel())
-        return urls;
+        return items;
 
     const QModelIndexList indexes = view->selectionModel()->selectedRows();
     for (const QModelIndex &proxyIndex : indexes) {
         const QModelIndex sourceIndex = m_proxyModel->mapToSource(proxyIndex);
         const KFileItem item = m_dirModel->itemForIndex(sourceIndex);
         if (!item.isNull())
-            urls << item.url();
+            items << item;
     }
-    return urls;
+    return items;
 }
 
 void BrowserTab::activateCurrentItem()
