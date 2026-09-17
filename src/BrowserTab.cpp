@@ -12,6 +12,7 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QFileInfo>
 #include <QFont>
 #include <QFrame>
 #include <QHeaderView>
@@ -114,6 +115,15 @@ public:
         painter->restore();
     }
 };
+
+// Remote locations aren't checked synchronously here - stat-ing over the network on every
+// failed listing would just trade one hang for another. Only local paths (including regular
+// mounts like NFS/CIFS shares, which look local to Qt/KIO) get the existence check; anything
+// else is assumed to still be there.
+bool urlStillExists(const QUrl &url)
+{
+    return !url.isLocalFile() || QFileInfo::exists(url.toLocalFile());
+}
 }
 
 BrowserTab::BrowserTab(PlacesSidebar *sidebar, QWidget *parent)
@@ -237,6 +247,7 @@ void BrowserTab::setupViews()
     // would double up across tabs
 
     connect(m_dirLister, &KCoreDirLister::completed, this, &BrowserTab::statusChanged);
+    connect(m_dirLister, &KCoreDirLister::jobError, this, &BrowserTab::onDirListingFailed);
     connect(m_dirLister, &KCoreDirLister::itemsAdded, this, [this](const QUrl &, const KFileItemList &items) {
         if (m_showThumbnails)
             requestThumbnails(items);
@@ -289,6 +300,33 @@ void BrowserTab::loadUrl(const QUrl &url)
     Q_EMIT urlChanged(url);
     Q_EMIT titleChanged();
     Q_EMIT historyChanged();
+}
+
+void BrowserTab::onDirListingFailed()
+{
+    if (urlStillExists(m_currentUrl))
+        return; // some other listing error (permission denied, etc) - KIO's own auto error
+                // dialog already told the user, there's nothing to recover from here
+
+    // first choice: the nearest surviving spot already in history, walking backwards from here
+    for (int i = m_historyIndex - 1; i >= 0; --i) {
+        if (urlStillExists(m_history.at(i))) {
+            m_history.remove(i + 1, m_history.size() - (i + 1));
+            m_historyIndex = i;
+            loadUrl(m_history.at(i));
+            return;
+        }
+    }
+
+    // history's a dead end too (the whole tree got removed) - climb parents of where we were
+    // until one exists; guaranteed to terminate since "/" always does
+    QUrl fallback = parentOf(m_currentUrl);
+    while (!urlStillExists(fallback) && parentOf(fallback) != fallback)
+        fallback = parentOf(fallback);
+
+    m_history = {fallback};
+    m_historyIndex = 0;
+    loadUrl(fallback);
 }
 
 bool BrowserTab::canGoBack() const

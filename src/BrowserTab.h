@@ -87,6 +87,11 @@ private slots:
     // Dims whichever items are currently staged on the "cut" clipboard (Dolphin-style), so it
     // stays in sync whether the cut/copy/paste happened from this tab, another tab, or another window.
     void onClipboardChanged();
+    // The folder we were sitting in (or just navigated to) failed to list - most commonly
+    // because it (or an ancestor of it) was deleted out from under us. Walks back through
+    // history, then up through ancestors, until something still exists, and lands there
+    // automatically instead of leaving the tab stuck on a dead URL.
+    void onDirListingFailed();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
