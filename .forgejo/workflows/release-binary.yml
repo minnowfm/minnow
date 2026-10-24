@@ -1,0 +1,62 @@
+name: Build release binary (Forgejo)
+
+# Manual-only (workflow_dispatch) - builds a Linux x86_64 tarball for an existing tag and
+# uploads it as an asset on the matching Forgejo release. Separate from .github/workflows/
+# (which builds the full deb/rpm/arch/snap/AUR matrix on GitHub's runners) - this one is
+# scoped to whatever a single self-hosted runner can actually do, and deliberately avoids
+# any `uses: marketplace-action@version` step: this instance's Actions proxy/mirror setup
+# is unknown, so every step here is plain shell instead of something that might fail to
+# resolve.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build (e.g. v0.1.9) - must already exist and have a release'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules git jq curl \
+            qt6-base kcoreaddons kconfigwidgets kwidgetsaddons kio kfilemetadata karchive knotifications kwindowsystem
+
+      - name: Clone the tag
+        run: git clone --depth 1 --branch "${{ inputs.tag }}" https://forgejo.voten.me/Voten641/minnow.git src
+
+      - name: Build and install to a staging root
+        run: |
+          cd src
+          VERSION="${TAG#v}"
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF \
+            -DMINNOW_APP_VERSION="$VERSION"
+          cmake --build build -j"$(nproc)"
+          DESTDIR="$PWD/../pkgroot" cmake --install build
+        env:
+          TAG: ${{ inputs.tag }}
+
+      - name: Create binary tarball
+        run: |
+          cd pkgroot
+          tar -czf "../minnow-${{ inputs.tag }}-x86_64.tar.gz" usr
+
+      - name: Upload tarball to the matching Forgejo release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          ASSET="minnow-${TAG}-x86_64.tar.gz"
+          RELEASE_ID=$(curl -sS -H "Authorization: token $FORGEJO_TOKEN" \
+            "https://forgejo.voten.me/api/v1/repos/Voten641/minnow/releases/tags/${TAG}" | jq -r '.id')
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "No release found for tag ${TAG} - create it first." >&2
+            exit 1
+          fi
+          curl -sS -f -X POST \
+            -H "Authorization: token $FORGEJO_TOKEN" \
+            -F "attachment=@${ASSET}" \
+            "https://forgejo.voten.me/api/v1/repos/Voten641/minnow/releases/${RELEASE_ID}/assets?name=${ASSET}"
